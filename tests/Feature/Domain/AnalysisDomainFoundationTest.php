@@ -31,6 +31,8 @@ class AnalysisDomainFoundationTest extends TestCase
 
         $analysisRun = AnalysisRun::create([
             'github_connection_id' => $connection->id,
+            'github_username' => 'octocat',
+            'analysis_mode' => 'public_private',
             'status' => 'complete',
             'source_window_start' => now()->subDays(28)->toDateString(),
             'source_window_end' => now()->toDateString(),
@@ -121,6 +123,8 @@ class AnalysisDomainFoundationTest extends TestCase
 
         $analysisRun = AnalysisRun::create([
             'github_connection_id' => $connection->id,
+            'github_username' => 'octocat',
+            'analysis_mode' => 'public_only',
             'status' => 'pending',
         ])->load(['metricSnapshot', 'weeklyBuckets', 'skillSignals', 'recommendations']);
 

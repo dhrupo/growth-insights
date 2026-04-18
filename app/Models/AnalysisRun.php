@@ -14,6 +14,8 @@ class AnalysisRun extends Model
 
     protected $fillable = [
         'github_connection_id',
+        'github_username',
+        'analysis_mode',
         'status',
         'source_window_start',
         'source_window_end',
@@ -21,6 +23,11 @@ class AnalysisRun extends Model
         'completed_at',
         'overall_score',
         'confidence',
+        'momentum_label',
+        'strengths',
+        'weaknesses',
+        'weekly_plan',
+        'context',
         'summary',
         'evidence_summary',
     ];
@@ -34,6 +41,10 @@ class AnalysisRun extends Model
             'completed_at' => 'datetime',
             'overall_score' => 'decimal:2',
             'confidence' => 'decimal:2',
+            'strengths' => 'array',
+            'weaknesses' => 'array',
+            'weekly_plan' => 'array',
+            'context' => 'array',
         ];
     }
 

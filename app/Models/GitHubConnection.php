@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class GitHubConnection extends Model
 {
@@ -41,5 +42,10 @@ class GitHubConnection extends Model
     public function analysisRuns(): HasMany
     {
         return $this->hasMany(AnalysisRun::class, 'github_connection_id');
+    }
+
+    public function latestAnalysis(): HasOne
+    {
+        return $this->analysisRuns()->latestOfMany('completed_at');
     }
 }

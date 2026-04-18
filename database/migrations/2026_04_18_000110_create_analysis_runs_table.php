@@ -10,7 +10,9 @@ return new class extends Migration
     {
         Schema::create('analysis_runs', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('github_connection_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('github_connection_id')->nullable()->constrained()->nullOnDelete();
+            $table->string('github_username')->index();
+            $table->string('analysis_mode')->default('public_only');
             $table->string('status')->default('pending');
             $table->date('source_window_start')->nullable();
             $table->date('source_window_end')->nullable();
@@ -18,6 +20,11 @@ return new class extends Migration
             $table->timestamp('completed_at')->nullable();
             $table->decimal('overall_score', 5, 2)->nullable();
             $table->decimal('confidence', 5, 2)->nullable();
+            $table->string('momentum_label')->nullable();
+            $table->json('strengths')->nullable();
+            $table->json('weaknesses')->nullable();
+            $table->json('weekly_plan')->nullable();
+            $table->json('context')->nullable();
             $table->text('summary')->nullable();
             $table->text('evidence_summary')->nullable();
             $table->timestamps();

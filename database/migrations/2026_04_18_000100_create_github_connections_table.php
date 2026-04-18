@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('github_connections', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->unique()->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->nullable()->unique()->constrained()->nullOnDelete();
             $table->string('github_username')->index();
             $table->string('analysis_mode')->default('public_only');
             $table->text('access_token')->nullable();

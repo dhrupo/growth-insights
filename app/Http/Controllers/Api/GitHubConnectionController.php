@@ -2,19 +2,44 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Requests\StoreGitHubConnectionRequest;
+use App\Http\Resources\AnalysisRunResource;
+use App\Http\Resources\GitHubConnectionResource;
 use App\Models\GitHubConnection;
+use App\Services\Analysis\GrowthAnalysisService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class GitHubConnectionController extends ApiController
 {
-    public function store(Request $request): JsonResponse
+    public function store(StoreGitHubConnectionRequest $request): JsonResponse
     {
-        return $this->notImplemented('GitHub connection creation is scaffolded but not implemented yet.');
+        $connection = GitHubConnection::create([
+            'user_id' => $request->validated('user_id'),
+            'github_username' => $request->validated('github_username'),
+            'analysis_mode' => $request->validated('analysis_mode', 'public_private'),
+            'access_token' => $request->validated('access_token'),
+            'sync_status' => 'idle',
+            'connected_at' => now(),
+        ]);
+
+        return $this->resource(GitHubConnectionResource::make($connection), 201);
     }
 
-    public function sync(GitHubConnection $githubConnection): JsonResponse
+    public function sync(GitHubConnection $githubConnection, GrowthAnalysisService $growthAnalysisService): JsonResponse
     {
-        return $this->notImplemented('GitHub sync is scaffolded but not implemented yet.');
+        $analysis = $growthAnalysisService->syncConnection($githubConnection);
+
+        return $this->resource(AnalysisRunResource::make($analysis));
+    }
+
+    public function latestAnalysis(GitHubConnection $githubConnection, GrowthAnalysisService $growthAnalysisService): JsonResponse
+    {
+        $analysis = $growthAnalysisService->latestForConnection($githubConnection);
+
+        if ($analysis === null) {
+            return $this->notFound('No analysis run found for this GitHub connection.');
+        }
+
+        return $this->resource(AnalysisRunResource::make($analysis));
     }
 }
