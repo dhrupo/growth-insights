@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AnalysisController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\DashboardGitHubController;
 use App\Http\Controllers\Api\GitHubConnectionController;
 use Illuminate\Support\Facades\Route;
 
@@ -10,6 +11,8 @@ Route::prefix('dashboard')->group(function (): void {
     Route::get('timeline', [DashboardController::class, 'timeline'])->name('dashboard.timeline');
     Route::get('insights', [DashboardController::class, 'insights'])->name('dashboard.insights');
     Route::get('simulator', [DashboardController::class, 'simulator'])->name('dashboard.simulator');
+    Route::post('github/public-analysis', [DashboardGitHubController::class, 'publicAnalysis'])->name('dashboard.github.public-analysis');
+    Route::post('github/private-connection', [DashboardGitHubController::class, 'privateConnection'])->name('dashboard.github.private-connection');
 });
 
 Route::post('analysis/public', [AnalysisController::class, 'storePublic'])

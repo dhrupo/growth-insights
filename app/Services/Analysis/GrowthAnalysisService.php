@@ -110,6 +110,27 @@ class GrowthAnalysisService
         $evidenceSummary = $this->buildEvidenceSummary($facts, $metrics, $momentumLabel);
         $summary = $this->buildSummary($facts, $metrics, $momentumLabel, $strengths, $weaknesses);
         $context = $this->buildContext($facts, $metrics, $weeklyBuckets, $momentumLabel);
+        $ruleBasedSections = [
+            'summary' => $summary,
+            'weekly_plan' => $weeklyPlan,
+            'recommendations' => $recommendations,
+        ];
+        $aiEnhancement = $this->geminiInsightService->enhance([
+            'profile' => $facts['profile'],
+            'metrics' => $metrics,
+            'strengths' => $strengths,
+            'weaknesses' => $weaknesses,
+            'weekly_plan' => $weeklyPlan,
+            'recommendations' => $recommendations,
+            'skill_signals' => $skillSignals,
+            'weekly_buckets' => $weeklyBuckets,
+            'evidence_summary' => $evidenceSummary,
+        ]);
+        $weeklyPlanWithAi = $this->mergeWeeklyPlanEnhancement($weeklyPlan, $aiEnhancement['weekly_plan_notes'] ?? []);
+        $recommendationsWithAi = $this->mergeRecommendationEnhancement($recommendations, $aiEnhancement['recommendation_notes'] ?? []);
+        $aiEnhancement['merged_weekly_plan'] = $weeklyPlanWithAi;
+        $aiEnhancement['merged_recommendations'] = $recommendationsWithAi;
+        $aiEnhancement['rule_based_sections'] = $ruleBasedSections;
 
         $analysisRun = DB::transaction(function () use (
             $connection,
@@ -130,6 +151,7 @@ class GrowthAnalysisService
             $weeklyBuckets,
             $skillSignals,
             $recommendations,
+            $aiEnhancement,
         ): AnalysisRun {
             $run = AnalysisRun::create([
                 'github_connection_id' => $connection?->id,
@@ -147,6 +169,12 @@ class GrowthAnalysisService
                 'weaknesses' => $weaknesses,
                 'weekly_plan' => $weeklyPlan,
                 'context' => $context,
+                'ai_status' => $aiEnhancement['status'] ?? 'not_requested',
+                'ai_model' => $aiEnhancement['model'] ?? null,
+                'ai_snapshot_hash' => $aiEnhancement['snapshot_hash'] ?? null,
+                'ai_enhanced_at' => ($aiEnhancement['status'] ?? null) === 'enhanced' ? now() : null,
+                'ai_error' => $aiEnhancement['error'] ?: null,
+                'ai_enhancement' => $aiEnhancement,
                 'summary' => $summary,
                 'evidence_summary' => $evidenceSummary,
             ]);
@@ -556,6 +584,39 @@ class GrowthAnalysisService
                 'weekly_buckets' => array_map(static fn (array $bucket) => Arr::except($bucket, ['total_events']), $weeklyBuckets),
             ],
         ];
+    }
+
+    private function mergeWeeklyPlanEnhancement(array $weeklyPlan, array $weeklyPlanNotes): array
+    {
+        $notesByIndex = collect($weeklyPlanNotes)->keyBy('index');
+
+        return collect($weeklyPlan)->values()->map(function (array $item, int $index) use ($notesByIndex): array {
+            $note = $notesByIndex->get($index);
+
+            if ($note === null) {
+                $item['ai_note'] = null;
+
+                return $item;
+            }
+
+            $item['ai_note'] = $note['ai_note'] ?? null;
+
+            return $item;
+        })->all();
+    }
+
+    private function mergeRecommendationEnhancement(array $recommendations, array $recommendationNotes): array
+    {
+        $notesByIndex = collect($recommendationNotes)->keyBy('index');
+
+        return collect($recommendations)->values()->map(function (array $item, int $index) use ($notesByIndex): array {
+            $note = $notesByIndex->get($index);
+
+            $item['ai_note'] = $note['ai_note'] ?? null;
+            $item['ai_confidence'] = $note['confidence'] ?? null;
+
+            return $item;
+        })->all();
     }
 
     private function momentumScore(array $weeklyBuckets): float

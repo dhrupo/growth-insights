@@ -8,34 +8,34 @@ import {
 
 export const primaryNavigation = [
     {
-        label: 'Dashboard',
+        label: 'Overview',
         path: '/dashboard',
         icon: Monitor,
-        hint: 'Core metrics and pacing',
+        hint: 'Public and private analysis entry',
     },
     {
         label: 'Advanced',
         path: '/dashboard/advanced',
         icon: Operation,
-        hint: 'Filters and drill-downs',
+        hint: 'Filters and diagnostic surfaces',
     },
     {
-        label: 'Analytics',
+        label: 'Workbench',
         path: '/analytics',
         icon: Histogram,
-        hint: 'Trend exploration',
+        hint: 'Run analysis and inspect score drivers',
     },
     {
         label: 'Reports',
         path: '/reports',
         icon: Document,
-        hint: 'Exports and summaries',
+        hint: 'Shareable summaries and exports',
     },
     {
         label: 'Settings',
         path: '/settings',
         icon: Setting,
-        hint: 'Workspace defaults',
+        hint: 'Scoring and defaults',
     },
 ];
 
@@ -54,33 +54,33 @@ export const dashboardModes = [
 
 export const sectionRoutes = {
     analytics: {
-        eyebrow: 'Analysis',
-        title: 'Analytics',
-        description: 'Explore cohorts, usage patterns, and performance movement across the workspace.',
+        eyebrow: 'Public analysis',
+        title: 'Run a public GitHub scan',
+        description: 'Enter a username, inspect the public profile, and read the score model without any token.',
         highlights: [
-            'Time-series inspection with consistent filters.',
-            'Chart-first exploration with table drill-downs.',
-            'Reusable layouts for segment and channel analysis.',
+            'Start with a username and see the public profile immediately.',
+            'Use the score breakdown to spot consistency, collaboration, and testing gaps.',
+            'Use this path before deciding whether private workspace access is worth connecting.',
         ],
     },
     reports: {
-        eyebrow: 'Reporting',
-        title: 'Reports',
-        description: 'Ship clean exports and audit-ready snapshots without duplicating the dashboard shell.',
+        eyebrow: 'Private workspace',
+        title: 'Connect a token for private signals',
+        description: 'Attach a personal access token and layer private repositories onto the same analysis flow.',
         highlights: [
-            'Saved views and scheduled exports.',
-            'Operational summaries for stakeholders.',
-            'A shared route and card pattern with the dashboard.',
+            'Token-backed connection unlocks private repository context.',
+            'The connection form stays isolated from the public scan so each step can fail cleanly.',
+            'Private data is designed to merge into the same score and recommendation surface.',
         ],
     },
     settings: {
-        eyebrow: 'Workspace',
-        title: 'Settings',
-        description: 'Keep global defaults, display preferences, and access controls in one predictable place.',
+        eyebrow: 'Scoring model',
+        title: 'Tune the scoring defaults',
+        description: 'Keep the current model transparent, with room for thresholds, weightings, and refresh cadence.',
         highlights: [
-            'Layout and density preferences.',
-            'Refresh cadence and data retention defaults.',
-            'Mode defaults for simple and advanced users.',
+            'Weight consistency, contribution, and testing according to the same visible score model.',
+            'Keep freshness and refresh cadence obvious while the backend catches up.',
+            'Surface model changes without changing the dashboard shell.',
         ],
     },
 };

@@ -25,6 +25,12 @@ return new class extends Migration
             $table->json('weaknesses')->nullable();
             $table->json('weekly_plan')->nullable();
             $table->json('context')->nullable();
+            $table->string('ai_status')->default('not_requested');
+            $table->string('ai_model')->nullable();
+            $table->string('ai_snapshot_hash', 64)->nullable()->index();
+            $table->timestamp('ai_enhanced_at')->nullable();
+            $table->text('ai_error')->nullable();
+            $table->json('ai_enhancement')->nullable();
             $table->text('summary')->nullable();
             $table->text('evidence_summary')->nullable();
             $table->timestamps();

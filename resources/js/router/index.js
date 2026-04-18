@@ -35,11 +35,10 @@ const routes = [
             {
                 path: 'analytics',
                 name: 'analytics',
-                component: () => import('@/pages/SectionPage.vue'),
-                props: sectionRoutes.analytics,
+                component: () => import('@/pages/AnalysisWorkbenchPage.vue'),
                 meta: {
-                    title: 'Analytics',
-                    description: sectionRoutes.analytics.description,
+                    title: 'Analysis Workbench',
+                    description: 'Run public and private GitHub analysis and inspect the deeper signal breakdown.',
                 },
             },
             {

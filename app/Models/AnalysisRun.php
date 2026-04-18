@@ -28,6 +28,12 @@ class AnalysisRun extends Model
         'weaknesses',
         'weekly_plan',
         'context',
+        'ai_status',
+        'ai_model',
+        'ai_snapshot_hash',
+        'ai_enhanced_at',
+        'ai_error',
+        'ai_enhancement',
         'summary',
         'evidence_summary',
     ];
@@ -45,6 +51,8 @@ class AnalysisRun extends Model
             'weaknesses' => 'array',
             'weekly_plan' => 'array',
             'context' => 'array',
+            'ai_enhanced_at' => 'datetime',
+            'ai_enhancement' => 'array',
         ];
     }
 

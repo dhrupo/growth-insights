@@ -14,6 +14,8 @@ const endpointMap = {
     timeline: '/dashboard/timeline',
     insights: '/dashboard/insights',
     simulator: '/dashboard/simulator',
+    publicAnalysis: '/dashboard/github/public-analysis',
+    privateConnection: '/dashboard/github/private-connection',
 };
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? null;
@@ -31,9 +33,24 @@ const requestSlice = async (slice, params) => {
     }
 };
 
+const postSlice = async (slice, data) => {
+    try {
+        const response = await api.post(endpointMap[slice], data);
+        return unwrap(response);
+    } catch (error) {
+        if (import.meta.env.DEV) {
+            console.debug(`[dashboard-api] ${slice} endpoint unavailable`, error?.message ?? error);
+        }
+
+        return null;
+    }
+};
+
 export const dashboardApi = {
     fetchSummary: (params) => requestSlice('summary', params),
     fetchTimeline: (params) => requestSlice('timeline', params),
     fetchInsights: (params) => requestSlice('insights', params),
     fetchSimulator: (params) => requestSlice('simulator', params),
+    fetchPublicAnalysis: (params) => postSlice('publicAnalysis', params),
+    connectPrivateAnalysis: (params) => postSlice('privateConnection', params),
 };

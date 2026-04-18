@@ -43,9 +43,9 @@ watch(
                 <div class="dashboard-frame sticky top-6 flex h-[calc(100vh-3rem)] flex-col p-5">
                     <div class="rounded-[28px] bg-slate-950 px-5 py-5 text-white shadow-[0_24px_48px_-24px_rgba(15,23,42,0.9)]">
                         <p class="text-xs font-medium uppercase tracking-[0.3em] text-slate-400">Growth Insights</p>
-                        <h1 class="mt-3 text-2xl font-semibold tracking-tight">Operational dashboard</h1>
+                        <h1 class="mt-3 text-2xl font-semibold tracking-tight">Developer growth dashboard</h1>
                         <p class="mt-2 text-sm text-slate-300">
-                            Vue 3, Element Plus, Tailwind, and ECharts in a clean route-driven shell.
+                            Public analysis, optional private connections, and signal charts in one route-driven shell.
                         </p>
                     </div>
 
@@ -53,7 +53,7 @@ watch(
                         <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Mode</p>
                         <p class="mt-2 text-sm font-medium text-slate-900">{{ pageMode === 'advanced' ? 'Advanced' : 'Simple' }}</p>
                         <p class="mt-1 text-sm text-slate-500">
-                            Simple mode stays focused. Advanced mode adds filters and diagnostic surfaces.
+                            Simple mode stays focused on public scans. Advanced mode layers in private signals and recommendations.
                         </p>
                     </div>
 
@@ -89,7 +89,7 @@ watch(
                 <div class="flex h-full flex-col gap-4 p-2">
                     <div class="rounded-[28px] bg-slate-950 px-5 py-5 text-white">
                         <p class="text-xs font-medium uppercase tracking-[0.3em] text-slate-400">Growth Insights</p>
-                        <h1 class="mt-3 text-2xl font-semibold tracking-tight">Operational dashboard</h1>
+                        <h1 class="mt-3 text-2xl font-semibold tracking-tight">Developer growth dashboard</h1>
                     </div>
 
                     <nav class="space-y-2">

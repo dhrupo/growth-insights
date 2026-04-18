@@ -36,6 +36,10 @@ return [
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
         'base_uri' => env('GEMINI_BASE_URI', 'https://generativelanguage.googleapis.com'),
+        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+        'fallback_model' => env('GEMINI_FALLBACK_MODEL', 'gemini-2.0-flash'),
+        'cache_ttl_minutes' => env('GEMINI_CACHE_TTL_MINUTES', 10080),
+        'timeout_seconds' => env('GEMINI_TIMEOUT_SECONDS', 20),
     ],
 
     'slack' => [

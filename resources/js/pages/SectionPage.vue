@@ -30,21 +30,24 @@ defineProps({
 
             <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Route</p>
-                    <p class="mt-2 text-sm font-medium text-slate-900">Single route, multiple surfaces</p>
+                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Step 1</p>
+                    <p class="mt-2 text-sm font-medium text-slate-900">Enter a GitHub username</p>
+                    <p class="mt-2 text-sm leading-6 text-slate-500">Use the public scan flow to pull in the visible profile first.</p>
                 </div>
                 <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Layout</p>
-                    <p class="mt-2 text-sm font-medium text-slate-900">Element Plus controls with Tailwind shell</p>
+                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Step 2</p>
+                    <p class="mt-2 text-sm font-medium text-slate-900">Connect a private token</p>
+                    <p class="mt-2 text-sm leading-6 text-slate-500">Add private repository context only when you want the deeper signal.</p>
                 </div>
                 <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Charts</p>
-                    <p class="mt-2 text-sm font-medium text-slate-900">Ready for modular ECharts composition</p>
+                    <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Step 3</p>
+                    <p class="mt-2 text-sm font-medium text-slate-900">Review score and recommendations</p>
+                    <p class="mt-2 text-sm leading-6 text-slate-500">Track consistency, testing, collaboration, and the next best action.</p>
                 </div>
             </div>
         </SurfaceCard>
 
-        <SurfaceCard title="Highlights" description="Foundation notes to keep the section architecture consistent.">
+        <SurfaceCard title="Highlights" description="Route-specific guidance for the developer growth workflow.">
             <ul class="space-y-3">
                 <li
                     v-for="item in highlights"

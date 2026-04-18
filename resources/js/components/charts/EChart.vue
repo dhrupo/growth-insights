@@ -6,19 +6,22 @@ import {
     DatasetComponent,
     GridComponent,
     LegendComponent,
+    RadarComponent,
     TooltipComponent,
 } from 'echarts/components';
-import { BarChart, LineChart, PieChart } from 'echarts/charts';
+import { BarChart, LineChart, PieChart, RadarChart } from 'echarts/charts';
 import { CanvasRenderer } from 'echarts/renderers';
 
 echarts.use([
     DatasetComponent,
     GridComponent,
     LegendComponent,
+    RadarComponent,
     TooltipComponent,
     BarChart,
     LineChart,
     PieChart,
+    RadarChart,
     CanvasRenderer,
 ]);
 

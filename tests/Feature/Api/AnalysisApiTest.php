@@ -6,6 +6,7 @@ use App\Models\AnalysisRun;
 use App\Models\GitHubConnection;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Assert;
 use Tests\TestCase;
@@ -14,9 +15,19 @@ class AnalysisApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Cache::flush();
+        config([
+            'services.gemini.api_key' => 'test-gemini-key',
+            'services.gemini.model' => 'gemini-2.5-flash',
+        ]);
+    }
+
     public function test_public_analysis_creates_a_persisted_run_with_weekly_plan_and_signals(): void
     {
-        Http::fake($this->publicGitHubFake());
+        Http::fake($this->analysisHttpFake($this->publicGitHubFake(), $this->geminiFakeResponse()));
 
         $response = $this->postJson('/api/analysis/public', [
             'github_username' => 'octocat',
@@ -41,6 +52,7 @@ class AnalysisApiTest extends TestCase
                     'weekly_buckets',
                     'skill_signals',
                     'recommendations',
+                    'ai_enhancement',
                 ],
             ]);
 
@@ -55,6 +67,11 @@ class AnalysisApiTest extends TestCase
         $this->assertGreaterThan(0, $analysisRun->recommendations->count());
         $this->assertNotEmpty($analysisRun->strengths);
         $this->assertNotEmpty($analysisRun->weaknesses);
+        $this->assertSame('enhanced', $analysisRun->ai_status);
+        $this->assertSame('gemini-2.5-flash', $analysisRun->ai_model);
+        $this->assertFalse($analysisRun->ai_enhancement['cached']);
+        $this->assertNotEmpty($analysisRun->ai_enhancement['merged_weekly_plan'][0]['ai_note'] ?? null);
+        $this->assertNotEmpty($analysisRun->ai_enhancement['merged_recommendations'][0]['ai_note'] ?? null);
     }
 
     public function test_token_backed_connection_sync_uses_authenticated_requests_and_supports_latest_lookup(): void
@@ -68,7 +85,7 @@ class AnalysisApiTest extends TestCase
             'connected_at' => now()->subDay(),
         ]);
 
-        Http::fake($this->privateGitHubFake());
+        Http::fake($this->analysisHttpFake($this->privateGitHubFake(), $this->geminiFakeResponse()));
 
         $syncResponse = $this->postJson("/api/github/connections/{$connection->id}/sync");
 
@@ -118,7 +135,7 @@ class AnalysisApiTest extends TestCase
 
     public function test_dashboard_endpoints_reshape_latest_analysis_for_frontend_consumption(): void
     {
-        Http::fake($this->publicGitHubFake());
+        Http::fake($this->analysisHttpFake($this->publicGitHubFake(), $this->geminiFakeResponse()));
         $this->postJson('/api/analysis/public', ['github_username' => 'octocat'])->assertCreated();
 
         $this->getJson('/api/dashboard/summary')
@@ -155,6 +172,85 @@ class AnalysisApiTest extends TestCase
                     'series',
                 ],
             ]);
+    }
+
+    public function test_dashboard_workbench_endpoints_return_analysis_payload_for_public_and_private_flows(): void
+    {
+        Http::fake($this->analysisHttpFake($this->publicGitHubFake(), $this->geminiFakeResponse()));
+
+        $this->postJson('/api/dashboard/github/public-analysis', [
+            'username' => 'octocat',
+        ])->assertOk()
+            ->assertJsonPath('data.profile.username', 'octocat')
+            ->assertJsonStructure([
+                'data' => [
+                    'profile',
+                    'summary',
+                    'connection',
+                    'scoreBreakdown',
+                    'skillDistribution',
+                    'strengths',
+                    'weaknesses',
+                    'recommendations',
+                ],
+            ]);
+
+        Http::fake($this->analysisHttpFake($this->privateGitHubFake(), $this->geminiFakeResponse()));
+
+        $this->postJson('/api/dashboard/github/private-connection', [
+            'username' => 'octocat',
+            'token' => 'ghp_test_private_token_value',
+        ])->assertOk()
+            ->assertJsonPath('data.connection.connected', true)
+            ->assertJsonPath('data.privateStatus', 'ready');
+    }
+
+    private function geminiFakeResponse(): array
+    {
+        return [
+            'https://generativelanguage.googleapis.com/v1beta/models/*:generateContent' => Http::response([
+                'candidates' => [
+                    [
+                        'content' => [
+                            'parts' => [
+                                [
+                                    'text' => json_encode([
+                                        'summary' => 'The profile is stable, with AI emphasis on consistency and one clearer next step.',
+                                        'weekly_plan_notes' => [
+                                            [
+                                                'index' => 0,
+                                                'ai_note' => 'Keep this block focused on a single visible contribution.',
+                                            ],
+                                            [
+                                                'index' => 3,
+                                                'ai_note' => 'Use the collaboration step to create a reviewable artifact.',
+                                            ],
+                                        ],
+                                        'recommendation_notes' => [
+                                            [
+                                                'index' => 0,
+                                                'ai_note' => 'This should preserve cadence without increasing scope too much.',
+                                                'confidence' => 'high',
+                                            ],
+                                            [
+                                                'index' => 1,
+                                                'ai_note' => 'The weakest signal should move fastest with a concrete test or breadth change.',
+                                                'confidence' => 'medium',
+                                            ],
+                                        ],
+                                    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]),
+        ];
+    }
+
+    private function analysisHttpFake(array $githubFixtures, array $geminiFixtures): array
+    {
+        return array_merge($githubFixtures, $geminiFixtures);
     }
 
     private function publicGitHubFake(): array
