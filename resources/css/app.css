@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        color-scheme: light;
+        --el-color-primary: #2563eb;
+        --el-border-radius-base: 12px;
+    }
+
+    html {
+        min-height: 100%;
+        background: #f8fafc;
+    }
+
+    body {
+        min-height: 100vh;
+        margin: 0;
+        color: #0f172a;
+        background:
+            radial-gradient(circle at top left, rgba(59, 130, 246, 0.18), transparent 34%),
+            radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 30%),
+            linear-gradient(180deg, #f8fafc 0%, #eef2ff 55%, #f8fafc 100%);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    #app {
+        min-height: 100vh;
+    }
+}
+
+@layer components {
+    .dashboard-surface {
+        @apply rounded-[28px] border border-white/70 bg-white/90 shadow-dashboard backdrop-blur-xl;
+    }
+
+    .dashboard-frame {
+        @apply rounded-[32px] border border-slate-200/70 bg-white/75 shadow-dashboard backdrop-blur-xl;
+    }
+
+    .dashboard-chip {
+        @apply inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600;
+    }
+}
