@@ -1,4 +1,4 @@
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 import { useDashboardStore } from '@/stores/dashboard';
 
@@ -92,6 +92,7 @@ export function useGrowthAnalysisWorkbench() {
     const publicForm = reactive({
         username: store.analysis.username,
     });
+    const publicActionLoading = ref(false);
 
     watch(
         () => store.analysis.username,
@@ -130,16 +131,23 @@ export function useGrowthAnalysisWorkbench() {
             minute: '2-digit',
         }).format(new Date(parsed));
     });
-    const publicLoading = computed(() => store.analysisStatus === 'loading');
+    const publicLoading = computed(() => publicActionLoading.value);
+    const backgroundLoading = computed(() => store.analysisStatus === 'loading');
     const publicError = computed(() => store.analysisError);
     const skillRadarOption = computed(() => buildSkillRadarOption(store.analysis));
 
     const runPublicAnalysis = async () => {
-        await store.runPublicAnalysis({
-            username: publicForm.username,
-            range: store.filters.range,
-            segment: store.filters.segment,
-        });
+        publicActionLoading.value = true;
+
+        try {
+            await store.runPublicAnalysis({
+                username: publicForm.username,
+                range: store.filters.range,
+                segment: store.filters.segment,
+            });
+        } finally {
+            publicActionLoading.value = false;
+        }
     };
 
     return {
@@ -152,6 +160,7 @@ export function useGrowthAnalysisWorkbench() {
         analysisUpdatedLabel,
         publicForm,
         publicLoading,
+        backgroundLoading,
         publicError,
         skillRadarOption,
         runPublicAnalysis,

@@ -30,6 +30,7 @@ const {
     analysisNotice,
     publicForm,
     publicLoading,
+    backgroundLoading,
     publicError,
     skillRadarOption,
     runPublicAnalysis,
@@ -43,7 +44,7 @@ const routeUsername = computed(() =>
         : 'dhrupo',
 );
 
-const loadingInitialProfile = computed(() => publicLoading.value && !store.hasAnalysisRun);
+const loadingInitialProfile = computed(() => backgroundLoading.value && !store.hasAnalysisRun);
 const githubConnectUrl = computed(() => `/auth/github/redirect?username=${encodeURIComponent(routeUsername.value)}`);
 
 const snapshotStats = computed(() => {
