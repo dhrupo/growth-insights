@@ -72,6 +72,11 @@ class AnalysisApiTest extends TestCase
         $this->assertFalse($analysisRun->ai_enhancement['cached']);
         $this->assertNotEmpty($analysisRun->ai_enhancement['merged_weekly_plan'][0]['ai_note'] ?? null);
         $this->assertNotEmpty($analysisRun->ai_enhancement['merged_recommendations'][0]['ai_note'] ?? null);
+        $this->assertNotEmpty($analysisRun->context['repositories'] ?? []);
+        $this->assertNotEmpty($analysisRun->context['trajectory'] ?? []);
+        $this->assertNotEmpty($analysisRun->context['contribution_style']['label'] ?? null);
+        $this->assertArrayHasKey('how_to_get_noticed', $analysisRun->ai_enhancement);
+        $this->assertArrayHasKey('trajectory_12_months', $analysisRun->ai_enhancement);
     }
 
     public function test_token_backed_connection_sync_uses_authenticated_requests_and_supports_latest_lookup(): void
@@ -211,7 +216,21 @@ class AnalysisApiTest extends TestCase
         ])->postJson('/api/dashboard/github/current-analysis/sync')
             ->assertOk()
             ->assertJsonPath('data.connection.connected', true)
-            ->assertJsonPath('data.source', 'mixed');
+            ->assertJsonPath('data.source', 'mixed')
+            ->assertJsonStructure([
+                'data' => [
+                    'analysisRunId',
+                    'thirtyDayPlan',
+                    'skillSignals',
+                    'improvementActions',
+                    'howToGetNoticed' => ['summary', 'actions'],
+                    'trajectory' => ['windows', 'summary', 'outlook', 'confidence'],
+                    'contributionStyle' => ['label', 'summary', 'confidence', 'evidence'],
+                    'credibilityNotice',
+                    'analyzedRepositories',
+                    'suggestedRepositories',
+                ],
+            ]);
 
         $this->withSession([
             'github.current_connection_id' => $connection->id,
@@ -221,6 +240,14 @@ class AnalysisApiTest extends TestCase
             ->assertJsonPath('data.profile.username', 'octocat')
             ->assertJsonPath('data.connection.connected', true)
             ->assertJsonPath('data.source', 'mixed');
+
+        $payload = $this->withSession([
+            'github.current_connection_id' => $connection->id,
+            'github.current_username' => 'octocat',
+        ])->getJson('/api/dashboard/github/current-analysis')->json('data');
+
+        $this->assertNotEmpty($payload['contributionStyle']['label'] ?? null);
+        $this->assertNotEmpty($payload['analyzedRepositories'] ?? []);
     }
 
     private function geminiFakeResponse(): array
@@ -254,6 +281,42 @@ class AnalysisApiTest extends TestCase
                                                 'index' => 1,
                                                 'ai_note' => 'The weakest signal should move fastest with a concrete test or breadth change.',
                                                 'confidence' => 'medium',
+                                            ],
+                                        ],
+                                        'thirty_day_plan_notes' => [
+                                            [
+                                                'index' => 0,
+                                                'ai_note' => 'Keep the first week scoped to one visible repository.',
+                                            ],
+                                        ],
+                                        'improvement_actions' => [
+                                            [
+                                                'title' => 'Raise public reviewability',
+                                                'detail' => 'Open one smaller pull request weekly with a validation note.',
+                                                'why' => 'This increases visible collaboration signal fastest.',
+                                                'metric' => '1 public PR per week',
+                                            ],
+                                        ],
+                                        'how_to_get_noticed' => [
+                                            'summary' => 'More reviewable public work will make this profile easier to notice.',
+                                            'actions' => [
+                                                [
+                                                    'action' => 'Write clearer PR titles and descriptions.',
+                                                    'why' => 'Better framing helps others evaluate contributions faster.',
+                                                    'evidence' => 'Current visibility is more commit-heavy than PR-heavy.',
+                                                ],
+                                            ],
+                                        ],
+                                        'trajectory_12_months' => [
+                                            'summary' => 'If the current pace continues, the visible profile should strengthen as a reliable collaborator.',
+                                            'outlook' => 'The strongest compounding path is steady visible output plus more reviewable pull requests.',
+                                            'confidence' => 'medium',
+                                        ],
+                                        'suggested_repositories' => [
+                                            [
+                                                'repo' => 'laravel/framework',
+                                                'why_fit' => 'Matches the visible PHP and backend part of the profile.',
+                                                'realistic_contribution' => 'Start with tests, docs, or a small bug fix.',
                                             ],
                                         ],
                                     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),

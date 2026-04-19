@@ -41,12 +41,23 @@ export interface DashboardInsightItem {
     priority?: 'low' | 'medium' | 'high';
     why?: string | null;
     evidence?: unknown;
+    successMetric?: string | null;
+    focusArea?: string | null;
+    aiNote?: string | null;
 }
 
 export interface DashboardWeeklyPlanItem {
     day: string;
     title: string;
     action: string;
+    aiNote?: string | null;
+}
+
+export interface DashboardThirtyDayPlanItem {
+    week: string;
+    title: string;
+    action: string;
+    focus?: string | null;
     aiNote?: string | null;
 }
 
@@ -93,6 +104,85 @@ export interface GithubSkillDistribution {
     values: number[];
 }
 
+export interface GithubSkillSignal {
+    key: string;
+    label: string;
+    score: number;
+    confidence: string;
+    rawConfidence: number;
+    notes: string;
+    evidence: string[];
+}
+
+export interface GithubTrajectoryWindow {
+    label: string;
+    days: number;
+    score: number;
+    confidence: number;
+    active_days: number;
+    commits: number;
+    pull_requests: number;
+    issues: number;
+    repos_touched: number;
+    momentum: string;
+}
+
+export interface GithubAnalyzedRepository {
+    name: string;
+    fullName?: string | null;
+    url?: string | null;
+    visibility: string;
+    language?: string | null;
+    lastActivity?: string | null;
+    commitCount: number;
+    pullRequestCount: number;
+    issueCount: number;
+    description?: string | null;
+    signals?: Record<string, unknown>;
+}
+
+export interface GithubSuggestedRepository {
+    repo: string;
+    url?: string | null;
+    language?: string | null;
+    description?: string | null;
+    whyFit?: string | null;
+    realisticContribution?: string | null;
+    stars?: number | null;
+}
+
+export interface GithubContributionStyle {
+    label: string;
+    summary: string;
+    confidence: string;
+    evidence: string[];
+}
+
+export interface GithubVisibilityAdviceAction {
+    action: string;
+    why?: string;
+    evidence?: string;
+}
+
+export interface GithubVisibilityAdvice {
+    summary: string;
+    actions: GithubVisibilityAdviceAction[];
+}
+
+export interface GithubTrajectorySummary {
+    windows: Record<string, GithubTrajectoryWindow> | GithubTrajectoryWindow[];
+    summary: string;
+    outlook: string;
+    confidence: string;
+}
+
+export interface GithubImprovementAction {
+    title: string;
+    detail: string;
+    why?: string;
+    metric?: string;
+}
+
 export interface GithubAnalysisWorkbench {
     analysisRunId?: number | null;
     username: string;
@@ -101,14 +191,23 @@ export interface GithubAnalysisWorkbench {
     lastAnalyzedAt?: string | null;
     evidenceSummary?: string | null;
     weeklyPlan?: DashboardWeeklyPlanItem[];
+    thirtyDayPlan?: DashboardThirtyDayPlanItem[];
     profile: GithubAnalysisProfile;
     summary: string[];
     connection: GithubAnalysisConnection;
     scoreBreakdown: GithubScoreBreakdown;
     skillDistribution: GithubSkillDistribution;
+    skillSignals: GithubSkillSignal[];
     strengths: DashboardInsightItem[];
     weaknesses: DashboardInsightItem[];
     recommendations: DashboardInsightItem[];
+    improvementActions: GithubImprovementAction[];
+    howToGetNoticed: GithubVisibilityAdvice;
+    trajectory: GithubTrajectorySummary;
+    contributionStyle: GithubContributionStyle;
+    credibilityNotice?: string | null;
+    analyzedRepositories: GithubAnalyzedRepository[];
+    suggestedRepositories: GithubSuggestedRepository[];
     error?: string | null;
 }
 

@@ -98,10 +98,10 @@ export function useGrowthAnalysisWorkbench() {
         analysisConnection.value.connected
             ? (
                 analysis.value.analysisRunId
-                    ? 'Showing the latest completed analysis for your connected GitHub account.'
-                    : 'GitHub is connected. Run an analysis to build your private-aware profile.'
+                    ? 'This is the latest report for the GitHub account you connected.'
+                    : 'GitHub is connected. Run the analysis to see your profile.'
             )
-            : 'Connect GitHub to analyze your own activity and include private repositories you authorize.',
+            : 'Connect GitHub to see a report based on your own activity.',
     );
     const analysisUpdatedLabel = computed(() => {
         const value = analysis.value.lastAnalyzedAt;

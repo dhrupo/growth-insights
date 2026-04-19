@@ -38,6 +38,7 @@ const mergeAnalysisResponse = (baseAnalysis, payload, username = '') => {
         : analysis.summary;
     analysis.evidenceSummary = payload?.evidenceSummary ?? analysis.evidenceSummary ?? null;
     analysis.weeklyPlan = Array.isArray(payload?.weeklyPlan) ? payload.weeklyPlan : (analysis.weeklyPlan ?? []);
+    analysis.thirtyDayPlan = Array.isArray(payload?.thirtyDayPlan) ? payload.thirtyDayPlan : (analysis.thirtyDayPlan ?? []);
     analysis.connection = payload?.connection
         ? {
             ...analysis.connection,
@@ -46,6 +47,7 @@ const mergeAnalysisResponse = (baseAnalysis, payload, username = '') => {
         : analysis.connection;
     analysis.scoreBreakdown = payload?.scoreBreakdown ?? analysis.scoreBreakdown;
     analysis.skillDistribution = payload?.skillDistribution ?? analysis.skillDistribution;
+    analysis.skillSignals = Array.isArray(payload?.skillSignals) ? payload.skillSignals : (analysis.skillSignals ?? []);
     analysis.strengths = Array.isArray(payload?.strengths) && payload.strengths.length
         ? payload.strengths
         : analysis.strengths;
@@ -55,6 +57,13 @@ const mergeAnalysisResponse = (baseAnalysis, payload, username = '') => {
     analysis.recommendations = Array.isArray(payload?.recommendations) && payload.recommendations.length
         ? payload.recommendations
         : analysis.recommendations;
+    analysis.improvementActions = Array.isArray(payload?.improvementActions) ? payload.improvementActions : (analysis.improvementActions ?? []);
+    analysis.howToGetNoticed = payload?.howToGetNoticed ?? analysis.howToGetNoticed;
+    analysis.trajectory = payload?.trajectory ?? analysis.trajectory;
+    analysis.contributionStyle = payload?.contributionStyle ?? analysis.contributionStyle;
+    analysis.credibilityNotice = payload?.credibilityNotice ?? analysis.credibilityNotice ?? null;
+    analysis.analyzedRepositories = Array.isArray(payload?.analyzedRepositories) ? payload.analyzedRepositories : (analysis.analyzedRepositories ?? []);
+    analysis.suggestedRepositories = Array.isArray(payload?.suggestedRepositories) ? payload.suggestedRepositories : (analysis.suggestedRepositories ?? []);
     analysis.source = payload?.source ?? analysis.source;
     analysis.status = 'ready';
     analysis.lastAnalyzedAt = payload?.lastAnalyzedAt ?? new Date().toISOString();
@@ -100,6 +109,7 @@ const emptyAnalysis = () => ({
     lastAnalyzedAt: null,
     evidenceSummary: null,
     weeklyPlan: [],
+    thirtyDayPlan: [],
     profile: {
         username: '',
         displayName: '',
@@ -126,9 +136,30 @@ const emptyAnalysis = () => ({
         categories: [],
         values: [],
     },
+    skillSignals: [],
     strengths: [],
     weaknesses: [],
     recommendations: [],
+    improvementActions: [],
+    howToGetNoticed: {
+        summary: '',
+        actions: [],
+    },
+    trajectory: {
+        windows: [],
+        summary: '',
+        outlook: '',
+        confidence: 'Low',
+    },
+    contributionStyle: {
+        label: '',
+        summary: '',
+        confidence: '',
+        evidence: [],
+    },
+    credibilityNotice: null,
+    analyzedRepositories: [],
+    suggestedRepositories: [],
     error: null,
 });
 
@@ -268,6 +299,7 @@ export const useDashboardStore = defineStore('dashboard', {
         analysis: emptyAnalysis(),
         analysisStatus: 'idle',
         analysisError: null,
+        hasAutoStartedAnalysis: false,
         summary: defaultSliceState(emptySummary()),
         timeline: defaultSliceState(emptyTimeline()),
         acquisitionMix: defaultSliceState(emptyAcquisitionMix()),
@@ -310,6 +342,7 @@ export const useDashboardStore = defineStore('dashboard', {
             this.error = null;
             this.analysisStatus = 'idle';
             this.analysisError = null;
+            this.hasAutoStartedAnalysis = false;
         },
         setFilters(patch = {}) {
             Object.assign(this.filters, patch);
@@ -420,6 +453,15 @@ export const useDashboardStore = defineStore('dashboard', {
             await this.fetchDashboardData();
 
             return this.analysis;
+        },
+        async ensureCurrentAnalysis() {
+            if (!this.analysis?.connection?.connected || this.analysis?.analysisRunId || this.hasAutoStartedAnalysis) {
+                return this.analysis;
+            }
+
+            this.hasAutoStartedAnalysis = true;
+
+            return this.syncCurrentAnalysis();
         },
         async loadCurrentAnalysis() {
             this.analysisStatus = 'loading';

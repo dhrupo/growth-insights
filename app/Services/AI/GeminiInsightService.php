@@ -10,7 +10,7 @@ use Throwable;
 
 class GeminiInsightService
 {
-    private const PROMPT_VERSION = '1';
+    private const PROMPT_VERSION = '2';
 
     public function __construct(private readonly Factory $http)
     {
@@ -91,6 +91,12 @@ class GeminiInsightService
             'recommendations' => Arr::get($analysisFacts, 'recommendations', []),
             'skill_signals' => Arr::get($analysisFacts, 'skill_signals', []),
             'evidence_summary' => Arr::get($analysisFacts, 'evidence_summary'),
+            'repo_summary' => Arr::get($analysisFacts, 'repo_summary', []),
+            'trend_windows' => Arr::get($analysisFacts, 'trend_windows', []),
+            'contribution_style' => Arr::get($analysisFacts, 'contribution_style', []),
+            'visibility_advice' => Arr::get($analysisFacts, 'visibility_advice', []),
+            'suggested_repositories' => Arr::get($analysisFacts, 'suggested_repositories', []),
+            'thirty_day_plan' => Arr::get($analysisFacts, 'thirty_day_plan', []),
         ];
 
         return hash('sha256', json_encode($this->sortForHash($snapshot), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
@@ -99,18 +105,21 @@ class GeminiInsightService
     private function buildPrompt(array $analysisFacts, string $snapshotHash): string
     {
         $prompt = [
-            'role' => 'You are a strict product analyst for developer growth insights.',
+            'role' => 'You are a strict engineering mentor writing grounded developer-growth guidance.',
             'rules' => [
                 'Only use the structured facts provided.',
                 'Do not overwrite or contradict rule-based evidence.',
                 'Do not infer job, salary, burnout, or hiring outcomes.',
+                'Do not assign company titles or guaranteed career outcomes.',
                 'Return concise, actionable wording.',
-                'Keep each note short and grounded in evidence.',
+                'Keep every note evidence-based and measurable.',
                 'Reference existing rule-based items rather than inventing new evidence.',
+                'If the data is weak, explicitly stay cautious instead of sounding certain.',
             ],
             'output_requirements' => [
                 'Return JSON that matches the schema.',
                 'Provide one AI note per recommendation and one note per weekly plan item.',
+                'Provide one AI note per 30-day plan item.',
                 'Keep summary to 2-3 short sentences.',
                 'If no meaningful enhancement is possible, leave notes empty but still return valid JSON.',
             ],
@@ -125,11 +134,23 @@ class GeminiInsightService
                 'skill_signals' => Arr::get($analysisFacts, 'skill_signals', []),
                 'weekly_buckets' => Arr::get($analysisFacts, 'weekly_buckets', []),
                 'evidence_summary' => Arr::get($analysisFacts, 'evidence_summary'),
+                'analyzed_repositories' => Arr::get($analysisFacts, 'analyzed_repositories', []),
+                'repo_summary' => Arr::get($analysisFacts, 'repo_summary', []),
+                'trend_windows' => Arr::get($analysisFacts, 'trend_windows', []),
+                'contribution_style' => Arr::get($analysisFacts, 'contribution_style', []),
+                'visibility_advice' => Arr::get($analysisFacts, 'visibility_advice', []),
+                'suggested_repositories' => Arr::get($analysisFacts, 'suggested_repositories', []),
+                'thirty_day_plan' => Arr::get($analysisFacts, 'thirty_day_plan', []),
             ],
             'requested_enhancement' => [
                 'summary',
                 'weekly_plan_notes',
                 'recommendation_notes',
+                'thirty_day_plan_notes',
+                'improvement_actions',
+                'how_to_get_noticed',
+                'trajectory_12_months',
+                'suggested_repositories',
             ],
         ];
 
@@ -168,8 +189,72 @@ class GeminiInsightService
                         'required' => ['index', 'ai_note'],
                     ],
                 ],
+                'thirty_day_plan_notes' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'index' => ['type' => 'integer'],
+                            'ai_note' => ['type' => 'string'],
+                        ],
+                        'required' => ['index', 'ai_note'],
+                    ],
+                ],
+                'improvement_actions' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'title' => ['type' => 'string'],
+                            'detail' => ['type' => 'string'],
+                            'why' => ['type' => 'string'],
+                            'metric' => ['type' => 'string'],
+                        ],
+                        'required' => ['title', 'detail'],
+                    ],
+                ],
+                'how_to_get_noticed' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'summary' => ['type' => 'string'],
+                        'actions' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'action' => ['type' => 'string'],
+                                    'why' => ['type' => 'string'],
+                                    'evidence' => ['type' => 'string'],
+                                ],
+                                'required' => ['action'],
+                            ],
+                        ],
+                    ],
+                    'required' => ['summary', 'actions'],
+                ],
+                'trajectory_12_months' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'summary' => ['type' => 'string'],
+                        'outlook' => ['type' => 'string'],
+                        'confidence' => ['type' => 'string'],
+                    ],
+                    'required' => ['summary', 'outlook'],
+                ],
+                'suggested_repositories' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'repo' => ['type' => 'string'],
+                            'why_fit' => ['type' => 'string'],
+                            'realistic_contribution' => ['type' => 'string'],
+                        ],
+                        'required' => ['repo'],
+                    ],
+                ],
             ],
-            'required' => ['summary', 'weekly_plan_notes', 'recommendation_notes'],
+            'required' => ['summary', 'weekly_plan_notes', 'recommendation_notes', 'thirty_day_plan_notes', 'improvement_actions', 'how_to_get_noticed', 'trajectory_12_months', 'suggested_repositories'],
         ];
     }
 
@@ -208,6 +293,34 @@ class GeminiInsightService
                 'ai_note' => (string) ($item['ai_note'] ?? ''),
                 'confidence' => (string) ($item['confidence'] ?? 'medium'),
             ], $payload['recommendation_notes'] ?? [])),
+            'thirty_day_plan_notes' => array_values(array_map(static fn (array $item): array => [
+                'index' => (int) ($item['index'] ?? 0),
+                'ai_note' => (string) ($item['ai_note'] ?? ''),
+            ], $payload['thirty_day_plan_notes'] ?? [])),
+            'improvement_actions' => array_values(array_map(static fn (array $item): array => [
+                'title' => (string) ($item['title'] ?? ''),
+                'detail' => (string) ($item['detail'] ?? ''),
+                'why' => (string) ($item['why'] ?? ''),
+                'metric' => (string) ($item['metric'] ?? ''),
+            ], $payload['improvement_actions'] ?? [])),
+            'how_to_get_noticed' => [
+                'summary' => (string) data_get($payload, 'how_to_get_noticed.summary', ''),
+                'actions' => array_values(array_map(static fn (array $item): array => [
+                    'action' => (string) ($item['action'] ?? ''),
+                    'why' => (string) ($item['why'] ?? ''),
+                    'evidence' => (string) ($item['evidence'] ?? ''),
+                ], data_get($payload, 'how_to_get_noticed.actions', []))),
+            ],
+            'trajectory_12_months' => [
+                'summary' => (string) data_get($payload, 'trajectory_12_months.summary', ''),
+                'outlook' => (string) data_get($payload, 'trajectory_12_months.outlook', ''),
+                'confidence' => (string) data_get($payload, 'trajectory_12_months.confidence', 'medium'),
+            ],
+            'suggested_repositories' => array_values(array_map(static fn (array $item): array => [
+                'repo' => (string) ($item['repo'] ?? ''),
+                'why_fit' => (string) ($item['why_fit'] ?? ''),
+                'realistic_contribution' => (string) ($item['realistic_contribution'] ?? ''),
+            ], $payload['suggested_repositories'] ?? [])),
             'error' => $error,
         ];
     }
@@ -221,6 +334,18 @@ class GeminiInsightService
                 'summary' => '',
                 'weekly_plan_notes' => [],
                 'recommendation_notes' => [],
+                'thirty_day_plan_notes' => [],
+                'improvement_actions' => [],
+                'how_to_get_noticed' => [
+                    'summary' => '',
+                    'actions' => [],
+                ],
+                'trajectory_12_months' => [
+                    'summary' => '',
+                    'outlook' => '',
+                    'confidence' => 'low',
+                ],
+                'suggested_repositories' => [],
             ],
             cached: false,
             error: $error,

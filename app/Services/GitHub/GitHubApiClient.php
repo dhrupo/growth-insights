@@ -28,6 +28,7 @@ class GitHubApiClient
             "/users/{$githubUsername}/repos",
             ['sort' => 'updated', 'direction' => 'desc', 'type' => 'owner'],
             null,
+            1,
         );
     }
 
@@ -37,6 +38,7 @@ class GitHubApiClient
             '/user/repos',
             ['sort' => 'updated', 'direction' => 'desc', 'visibility' => 'all', 'affiliation' => 'owner,collaborator'],
             $token,
+            1,
         );
     }
 
@@ -52,8 +54,10 @@ class GitHubApiClient
             [
                 'author' => $githubUsername,
                 'since' => $since->toIso8601String(),
+                'per_page' => 50,
             ],
             $token,
+            1,
         );
     }
 
@@ -104,6 +108,24 @@ class GitHubApiClient
         return $response->throw()->json('items', []);
     }
 
+    public function searchRepositories(
+        string $query,
+        ?string $token = null,
+        string $sort = 'stars',
+        string $order = 'desc',
+        int $perPage = 10
+    ): array {
+        $response = $this->pending($token)->get('/search/repositories', [
+            'q' => $query,
+            'sort' => $sort,
+            'order' => $order,
+            'per_page' => $perPage,
+            'page' => 1,
+        ]);
+
+        return $response->throw()->json('items', []);
+    }
+
     private function request(string $method, string $path, array $query = [], ?string $token = null): array
     {
         $response = $this->pending($token)->{$method}($path, $query);
@@ -117,7 +139,7 @@ class GitHubApiClient
 
         for ($page = 1; $page <= $maxPages; $page++) {
             $response = $this->pending($token)->get($path, $query + [
-                'per_page' => 100,
+                'per_page' => $query['per_page'] ?? 100,
                 'page' => $page,
             ]);
 

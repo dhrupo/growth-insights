@@ -81,9 +81,10 @@ const snapshotNarrative = computed(() => {
     const languageText = snapshotMeta.value.languages.length
         ? snapshotMeta.value.languages.join(', ')
         : 'the visible repository mix';
+    const momentumText = snapshotMeta.value.momentum ?? 'steady';
 
     if (analysis.value.evidenceSummary) {
-        return `${stats.days} active days across ${stats.weeks} active weeks produced ${stats.commits} commits and ${stats.prs} pull requests. The current profile leans toward ${languageText}, and momentum is reading as ${snapshotMeta.value.momentum ?? 'stable'}.`;
+        return `Over the last ${stats.weeks} active weeks, you showed up on ${stats.days} days, made ${stats.commits} commits, and opened ${stats.prs} pull requests. Your public work is showing the strongest signal in ${languageText}, and your recent pace looks ${momentumText}.`;
     }
 
     return '';
@@ -100,6 +101,19 @@ const focusAreas = computed(() =>
 );
 
 const trimmedSummary = computed(() => analysisSummary.value.slice(0, 3));
+const analyzedRepositories = computed(() => analysis.value.analyzedRepositories ?? []);
+const skillSignals = computed(() => analysis.value.skillSignals ?? []);
+const thirtyDayPlan = computed(() => analysis.value.thirtyDayPlan ?? []);
+const improvementActions = computed(() => analysis.value.improvementActions ?? []);
+const visibilityAdvice = computed(() => analysis.value.howToGetNoticed ?? { summary: '', actions: [] });
+const suggestedRepositories = computed(() => analysis.value.suggestedRepositories ?? []);
+const contributionStyle = computed(() => analysis.value.contributionStyle ?? { label: '', summary: '', confidence: '', evidence: [] });
+const trajectoryWindows = computed(() => {
+    const windows = analysis.value.trajectory?.windows ?? [];
+    const values = Array.isArray(windows) ? windows : Object.values(windows);
+
+    return [...values].sort((left, right) => Number(right.days || 0) - Number(left.days || 0));
+});
 
 const scoreBreakdownOption = computed(() => ({
     color: ['#2563eb', '#93c5fd'],
@@ -133,67 +147,59 @@ const scoreBreakdownOption = computed(() => ({
     ],
 }));
 
-const monthPlan = computed(() => {
-    const recommendationTitles = analysis.value.recommendations?.map((item) => item.title) ?? [];
-    const weaknessTitles = analysis.value.weaknesses?.map((item) => item.title) ?? [];
-
-    return [
-        {
-            week: 'Week 1',
-            title: 'Stabilize your baseline',
-            action: 'Keep a visible shipping cadence and complete one contribution that is easy to review end to end.',
-            focus: recommendationTitles[0] ?? 'Consistency and visible shipping',
-        },
-        {
-            week: 'Week 2',
-            title: 'Improve your weakest signal',
-            action: 'Choose the weakest area in the current report and improve it with one measurable output, not a vague intention.',
-            focus: weaknessTitles[0] ?? recommendationTitles[1] ?? 'Quality or breadth',
-        },
-        {
-            week: 'Week 3',
-            title: 'Broaden the profile',
-            action: 'Add one adjacent area such as tests, docs, tooling, or a second repository so the profile is not overly concentrated.',
-            focus: recommendationTitles[1] ?? 'Signal breadth',
-        },
-        {
-            week: 'Week 4',
-            title: 'Create a stronger public proof point',
-            action: 'Ship one contribution that is publicly reviewable and summarize what changed so the month ends with a strong artifact.',
-            focus: recommendationTitles[2] ?? 'Public proof of work',
-        },
-    ];
-});
-
-const scoreRangeSummary = computed(() => {
-    const current = simulator.value.current ?? 'n/a';
-    const projected = simulator.value.projected ?? 'n/a';
-    const uplift = simulator.value.uplift ?? '0.0';
-
-    return [
-        `Current score: ${current}`,
-        `Scenario score: ${projected}`,
-        `Estimated movement: ${uplift}`,
-    ];
-});
-
-const analyticsHighlights = computed(() => [
+const coverageHighlights = computed(() => [
     {
-        label: 'Momentum',
+        label: 'Recent trend',
         value: snapshotMeta.value.momentum ?? 'Stable',
         tone: 'text-blue-700',
     },
     {
-        label: 'Confidence',
-        value: snapshotMeta.value.confidence ? `${snapshotMeta.value.confidence}%` : 'Not scored',
+        label: 'Repos analyzed',
+        value: String(analyzedRepositories.value.length || 0),
         tone: 'text-emerald-700',
     },
-    { label: 'Last analyzed', value: analysisUpdatedLabel.value, tone: 'text-slate-700' },
+    { label: 'Last updated', value: analysisUpdatedLabel.value, tone: 'text-slate-700' },
 ]);
+
+const trajectoryOption = computed(() => ({
+    color: ['#2563eb', '#0f766e'],
+    tooltip: { trigger: 'axis' },
+    grid: { left: 20, right: 16, top: 16, bottom: 32 },
+    xAxis: {
+        type: 'category',
+        data: trajectoryWindows.value.map((item) => item.label),
+        axisTick: { show: false },
+    },
+    yAxis: {
+        type: 'value',
+        min: 0,
+        max: 10,
+        splitLine: { lineStyle: { color: '#e2e8f0' } },
+    },
+    series: [
+        {
+            name: 'Score',
+            type: 'line',
+            smooth: true,
+            symbolSize: 7,
+            data: trajectoryWindows.value.map((item) => Number((Number(item.score || 0) / 10).toFixed(1))),
+            lineStyle: { width: 3 },
+            areaStyle: { color: 'rgba(37, 99, 235, 0.12)' },
+        },
+        {
+            name: 'Confidence',
+            type: 'bar',
+            barWidth: 18,
+            data: trajectoryWindows.value.map((item) => Number((Number(item.confidence || 0) / 10).toFixed(1))),
+            itemStyle: { color: 'rgba(15, 118, 110, 0.45)', borderRadius: [8, 8, 0, 0] },
+        },
+    ],
+}));
 
 onMounted(async () => {
     store.resetAnalysisState();
     await store.loadCurrentAnalysis();
+    await store.ensureCurrentAnalysis();
 });
 </script>
 
@@ -202,11 +208,11 @@ onMounted(async () => {
         <section class="grid gap-6">
             <SurfaceCard
                 title="Profile analysis"
-                description="Connect GitHub first, then analyze the account you authorized. The dashboard stays focused on your own profile instead of arbitrary public usernames."
+                description="Connect GitHub first, then analyze the account you authorized."
             >
                 <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                     <div class="min-w-0">
-                        <p class="text-sm font-medium text-slate-500">Current profile</p>
+                        <p class="text-sm font-medium text-slate-500">Your profile</p>
                         <h2 class="mt-2 truncate text-3xl font-semibold tracking-tight text-slate-950">
                             {{ profileTitle }}
                         </h2>
@@ -215,17 +221,17 @@ onMounted(async () => {
                         </p>
                     </div>
 
-                    <div class="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:justify-end">
+                    <div class="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-end">
                         <a
                             :href="githubConnectUrl"
-                            class="inline-flex min-h-11 items-center justify-center rounded-xl border border-brand-200 bg-white px-5 py-3 text-sm font-semibold text-brand-700 shadow-sm transition hover:border-brand-300 hover:bg-brand-50 sm:flex-1"
+                            class="inline-flex h-12 items-center justify-center rounded-xl border border-brand-200 bg-white px-5 text-sm font-semibold text-brand-700 shadow-sm transition hover:border-brand-300 hover:bg-brand-50 sm:flex-1"
                         >
                             {{ hasConnection ? 'Reconnect GitHub' : 'Connect GitHub' }}
                         </a>
                         <el-button
                             type="primary"
                             size="large"
-                            class="sm:flex-1"
+                            class="!h-12 sm:flex-1"
                             :disabled="!canAnalyze"
                             :loading="publicLoading"
                             @click="runCurrentAnalysis"
@@ -235,10 +241,10 @@ onMounted(async () => {
                     </div>
                 </div>
 
-                <div v-if="analysis.evidenceSummary" class="mt-6 overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.14),_transparent_42%),linear-gradient(135deg,#0f172a_0%,#172554_100%)] px-5 py-5 text-white shadow-[0_24px_48px_-28px_rgba(15,23,42,0.9)]">
+                <div v-if="analysis.evidenceSummary" class="mt-5 overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.14),_transparent_42%),linear-gradient(135deg,#0f172a_0%,#172554_100%)] px-4 py-4 text-white shadow-[0_24px_48px_-28px_rgba(15,23,42,0.9)]">
                     <div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                         <div class="max-w-2xl">
-                            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-slate-300">Analysis snapshot</p>
+                            <p class="text-xs font-semibold uppercase tracking-[0.28em] text-slate-300">Quick read</p>
                             <h3 class="mt-3 text-2xl font-semibold tracking-tight text-white">
                                 {{ snapshotMeta.score ? `${snapshotMeta.score}/10` : 'Live profile read' }}
                             </h3>
@@ -258,15 +264,15 @@ onMounted(async () => {
 
                         <div class="grid min-w-0 gap-3 sm:grid-cols-3 xl:w-[340px] xl:grid-cols-1">
                             <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
-                                <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">Momentum</p>
+                                <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">Recent trend</p>
                                 <p class="mt-2 text-lg font-semibold text-white">{{ snapshotMeta.momentum ?? 'Stable' }}</p>
                             </div>
                             <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
-                                <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">Confidence</p>
+                                <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">How complete this view is</p>
                                 <p class="mt-2 text-lg font-semibold text-white">{{ snapshotMeta.confidence ? `${snapshotMeta.confidence}%` : 'Not scored' }}</p>
                             </div>
                             <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
-                                <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">Focus</p>
+                                <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">Main strength</p>
                                 <p class="mt-2 text-lg font-semibold text-white">{{ focusAreas[0]?.label ?? 'Generalist' }}</p>
                             </div>
                         </div>
@@ -385,14 +391,96 @@ onMounted(async () => {
                 </SurfaceCard>
             </section>
 
+            <section class="grid items-start gap-6 xl:grid-cols-[1.25fr_1fr]">
+                <SurfaceCard
+                    title="Repositories used for this report"
+                    description="These are the repositories that contributed most to the current result."
+                >
+                    <div class="space-y-3">
+                        <article
+                            v-for="repo in analyzedRepositories"
+                            :key="repo.fullName || repo.name"
+                            class="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                        >
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <a
+                                        v-if="repo.url"
+                                        :href="repo.url"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        class="truncate text-sm font-semibold text-slate-950 hover:text-brand-700"
+                                    >
+                                        {{ repo.fullName || repo.name }}
+                                    </a>
+                                    <h3 v-else class="truncate text-sm font-semibold text-slate-950">{{ repo.fullName || repo.name }}</h3>
+                                    <p v-if="repo.description" class="mt-2 text-sm leading-6 text-slate-600">{{ repo.description }}</p>
+                                </div>
+                                <span class="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.24em]" :class="repo.visibility === 'private' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 border border-slate-200'">
+                                    {{ repo.visibility }}
+                                </span>
+                            </div>
+                            <div class="mt-3 flex flex-wrap gap-2">
+                                <span class="dashboard-chip">{{ repo.language || 'Unknown stack' }}</span>
+                                <span class="dashboard-chip">{{ repo.commitCount }} commits</span>
+                                <span class="dashboard-chip">{{ repo.pullRequestCount }} PRs</span>
+                                <span class="dashboard-chip">{{ repo.issueCount }} issues</span>
+                            </div>
+                        </article>
+                        <div v-if="analyzedRepositories.length === 0" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                            No repository source details are available for this run.
+                        </div>
+                    </div>
+                </SurfaceCard>
+
+                <SurfaceCard
+                    title="What stands out in your GitHub profile"
+                    description="A simple read on your style of work and the strongest visible skill signals."
+                >
+                    <div class="flex h-full flex-col gap-4">
+                        <div class="rounded-2xl border border-brand-100 bg-brand-50/70 p-4">
+                            <div class="flex items-center justify-between gap-3">
+                                <h3 class="text-sm font-semibold text-slate-950">{{ contributionStyle.label || 'Visible work style' }}</h3>
+                                <span class="text-[11px] font-semibold uppercase tracking-[0.24em] text-brand-700">{{ contributionStyle.confidence }}</span>
+                            </div>
+                            <p class="mt-2 text-sm leading-6 text-slate-700">{{ contributionStyle.summary }}</p>
+                            <ul v-if="contributionStyle.evidence?.length" class="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+                                <li v-for="item in contributionStyle.evidence" :key="item">• {{ item }}</li>
+                            </ul>
+                        </div>
+
+                        <div class="flex-1 space-y-3 overflow-y-auto pr-1">
+                            <article
+                                v-for="signal in skillSignals"
+                                :key="signal.key"
+                                class="rounded-2xl border border-slate-200 bg-white p-4"
+                            >
+                                <div class="flex items-center justify-between gap-3">
+                                    <h3 class="text-sm font-semibold text-slate-950">{{ signal.label }}</h3>
+                                    <span class="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                                        {{ signal.score.toFixed(1) }}/10 · {{ signal.confidence }}
+                                    </span>
+                                </div>
+                                <p class="mt-2 text-sm leading-6 text-slate-700">{{ signal.notes }}</p>
+                                <div class="mt-3 flex flex-wrap gap-2">
+                                    <span v-for="item in signal.evidence" :key="`${signal.key}-${item}`" class="dashboard-chip">
+                                        {{ item }}
+                                    </span>
+                                </div>
+                            </article>
+                        </div>
+                    </div>
+                </SurfaceCard>
+            </section>
+
             <section class="grid gap-6">
                 <SurfaceCard
-                    title="Signal visuals"
-                    description="A softer visual summary of where the strongest signals are concentrated and where the profile currently leans."
+                    title="Where your profile is strongest"
+                    description="A quick visual summary of the areas that show up most clearly."
                 >
                     <div class="grid items-stretch gap-6 xl:grid-cols-2">
                         <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                            <p class="text-sm font-semibold text-slate-950">Skill distribution</p>
+                            <p class="text-sm font-semibold text-slate-950">Skill mix</p>
                             <div class="mt-3">
                                 <AsyncEChart :option="skillRadarOption" height="380px" />
                             </div>
@@ -408,7 +496,7 @@ onMounted(async () => {
                         </div>
 
                         <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                            <p class="text-sm font-semibold text-slate-950">Signal balance</p>
+                            <p class="text-sm font-semibold text-slate-950">Strengths vs weaknesses</p>
                             <div class="mt-3">
                                 <AsyncEChart :option="segmentOption" height="380px" />
                             </div>
@@ -431,7 +519,7 @@ onMounted(async () => {
                 <SurfaceCard
                     class="h-full"
                     title="Strengths"
-                    description="Signals the system believes are already working in your favor."
+                    description="These are the habits and signals already helping your profile."
                 >
                     <div class="max-h-[440px] space-y-3 overflow-y-auto pr-1">
                         <article
@@ -454,7 +542,7 @@ onMounted(async () => {
                 <SurfaceCard
                     class="h-full"
                     title="Weaknesses"
-                    description="Signals that are currently suppressing growth, momentum, or confidence."
+                    description="These are the areas holding the profile back right now."
                 >
                     <div class="max-h-[440px] space-y-3 overflow-y-auto pr-1">
                         <article
@@ -477,7 +565,7 @@ onMounted(async () => {
                 <SurfaceCard
                     class="h-full"
                     title="Recommended next steps"
-                    description="What to do next, why it matters, and which signal it is trying to move."
+                    description="Start here if you want the fastest improvement."
                 >
                     <div class="max-h-[440px] space-y-3 overflow-y-auto pr-1">
                         <article
@@ -491,8 +579,16 @@ onMounted(async () => {
                             </div>
                             <p class="mt-2 text-sm leading-6 text-slate-700">{{ item.detail }}</p>
                             <p v-if="item.why" class="mt-3 rounded-xl bg-white px-3 py-2 text-sm leading-6 text-slate-600">
-                                <span class="font-medium text-slate-900">Why this matters:</span>
+                                <span class="font-medium text-slate-900">Why this helps:</span>
                                 {{ item.why }}
+                            </p>
+                            <p v-if="item.successMetric" class="mt-3 text-sm leading-6 text-slate-600">
+                                <span class="font-medium text-slate-900">What good looks like:</span>
+                                {{ item.successMetric }}
+                            </p>
+                            <p v-if="item.aiNote" class="mt-3 rounded-xl bg-brand-50 px-3 py-2 text-sm leading-6 text-brand-900">
+                                <span class="font-medium">Extra context:</span>
+                                {{ item.aiNote }}
                             </p>
                             <p v-if="item.evidence?.title" class="mt-3 text-xs uppercase tracking-[0.24em] text-slate-500">
                                 Triggered by {{ item.evidence.title }}
@@ -508,8 +604,58 @@ onMounted(async () => {
             <section class="grid items-stretch gap-6 xl:grid-cols-2">
                 <SurfaceCard
                     class="h-full"
+                    title="How to get noticed more"
+                    description="Practical ways to make your GitHub activity easier for other people to notice and trust."
+                >
+                    <div class="flex h-full flex-col gap-4">
+                        <p class="text-sm leading-6 text-slate-700">{{ visibilityAdvice.summary }}</p>
+                        <div class="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                            <article
+                                v-for="(item, index) in visibilityAdvice.actions"
+                                :key="`${item.action}-${index}`"
+                                class="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                            >
+                                <h3 class="text-sm font-semibold text-slate-950">{{ item.action }}</h3>
+                                <p v-if="item.why" class="mt-2 text-sm leading-6 text-slate-700">{{ item.why }}</p>
+                                <p v-if="item.evidence" class="mt-3 text-xs uppercase tracking-[0.24em] text-slate-500">{{ item.evidence }}</p>
+                            </article>
+                            <div v-if="visibilityAdvice.actions.length === 0" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                                No visibility guidance was generated for this run.
+                            </div>
+                        </div>
+                    </div>
+                </SurfaceCard>
+
+                <SurfaceCard
+                    class="h-full"
+                    title="Best actions to take next"
+                    description="A short list of moves that should improve the profile fastest."
+                >
+                    <div class="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                        <article
+                            v-for="(item, index) in improvementActions"
+                            :key="`${item.title}-${index}`"
+                            class="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                        >
+                            <h3 class="text-sm font-semibold text-slate-950">{{ item.title }}</h3>
+                            <p class="mt-2 text-sm leading-6 text-slate-700">{{ item.detail }}</p>
+                            <p v-if="item.why" class="mt-3 text-sm leading-6 text-slate-600">
+                                <span class="font-medium text-slate-900">Why this matters:</span> {{ item.why }}
+                            </p>
+                            <p v-if="item.metric" class="mt-3 text-xs uppercase tracking-[0.24em] text-slate-500">{{ item.metric }}</p>
+                        </article>
+                        <div v-if="improvementActions.length === 0" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                            No additional AI improvement actions were generated for this run.
+                        </div>
+                    </div>
+                </SurfaceCard>
+            </section>
+
+            <section class="grid items-stretch gap-6 xl:grid-cols-2">
+                <SurfaceCard
+                    class="h-full"
                     title="Next 7-day plan"
-                    description="A short weekly plan built from the current report so the next step is obvious."
+                    description="A simple plan for the next 7 days."
                 >
                     <div class="max-h-[520px] space-y-3 overflow-y-auto pr-1">
                         <article
@@ -525,7 +671,7 @@ onMounted(async () => {
                             </div>
                             <p class="mt-3 text-sm leading-6 text-slate-700">{{ item.action }}</p>
                             <p v-if="item.aiNote" class="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-600">
-                                <span class="font-medium text-slate-900">Coach note:</span>
+                                <span class="font-medium text-slate-900">Helpful note:</span>
                                 {{ item.aiNote }}
                             </p>
                         </article>
@@ -538,11 +684,11 @@ onMounted(async () => {
                 <SurfaceCard
                     class="h-full"
                     title="Next 30-day plan"
-                    description="A month-long structure for turning the current report into a more durable public profile."
+                    description="A simple plan for the next 30 days."
                 >
                     <div class="max-h-[520px] space-y-3 overflow-y-auto pr-1">
                         <article
-                            v-for="item in monthPlan"
+                            v-for="item in thirtyDayPlan"
                             :key="item.week"
                             class="rounded-2xl border border-slate-200 bg-white p-4"
                         >
@@ -556,7 +702,14 @@ onMounted(async () => {
                             <p class="mt-3 text-xs uppercase tracking-[0.24em] text-slate-500">
                                 Focus: {{ item.focus }}
                             </p>
+                            <p v-if="item.aiNote" class="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-600">
+                                <span class="font-medium text-slate-900">Helpful note:</span>
+                                {{ item.aiNote }}
+                            </p>
                         </article>
+                        <div v-if="thirtyDayPlan.length === 0" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                            No 30-day plan is available for this run yet.
+                        </div>
                     </div>
                 </SurfaceCard>
             </section>
@@ -565,7 +718,7 @@ onMounted(async () => {
                 <SurfaceCard
                     class="h-full"
                     title="Activity trend"
-                    description="Week-by-week contribution movement for the current analysis window."
+                    description="Your weekly activity over the current analysis window."
                 >
                     <AsyncEChart :option="trendOption" height="320px" />
                 </SurfaceCard>
@@ -582,15 +735,72 @@ onMounted(async () => {
             <section class="grid items-stretch gap-6 xl:grid-cols-2">
                 <SurfaceCard
                     class="h-full"
+                    title="Trajectory"
+                    description="How your GitHub profile has been changing over time, and what that may lead to if you keep going."
+                >
+                    <AsyncEChart :option="trajectoryOption" height="280px" />
+                    <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p class="text-sm font-semibold text-slate-950">{{ analysis.trajectory.summary }}</p>
+                        <p class="mt-2 text-sm leading-6 text-slate-700">{{ analysis.trajectory.outlook }}</p>
+                        <p class="mt-3 text-xs uppercase tracking-[0.24em] text-slate-500">
+                            How sure this is: {{ analysis.trajectory.confidence }}
+                        </p>
+                    </div>
+                </SurfaceCard>
+
+                <SurfaceCard
+                    class="h-full"
+                    title="Suggested repositories to contribute to"
+                    description="Repositories that look like a good fit for your current skills and contribution style."
+                >
+                    <div class="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                        <article
+                            v-for="item in suggestedRepositories"
+                            :key="item.repo"
+                            class="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                        >
+                            <div class="flex items-center justify-between gap-3">
+                                <a
+                                    v-if="item.url"
+                                    :href="item.url"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    class="text-sm font-semibold text-slate-950 hover:text-brand-700"
+                                >
+                                    {{ item.repo }}
+                                </a>
+                                <h3 v-else class="text-sm font-semibold text-slate-950">{{ item.repo }}</h3>
+                                <span v-if="item.language" class="dashboard-chip">{{ item.language }}</span>
+                            </div>
+                            <p v-if="item.description" class="mt-2 text-sm leading-6 text-slate-700">{{ item.description }}</p>
+                            <p v-if="item.whyFit" class="mt-3 text-sm leading-6 text-slate-600">
+                                <span class="font-medium text-slate-900">Why this fits you:</span>
+                                {{ item.whyFit }}
+                            </p>
+                            <p v-if="item.realisticContribution" class="mt-3 text-sm leading-6 text-slate-600">
+                                <span class="font-medium text-slate-900">A realistic first contribution:</span>
+                                {{ item.realisticContribution }}
+                            </p>
+                        </article>
+                        <div v-if="suggestedRepositories.length === 0" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                            No repository suggestions were generated for this run.
+                        </div>
+                    </div>
+                </SurfaceCard>
+            </section>
+
+            <section class="grid items-stretch gap-6 xl:grid-cols-2">
+                <SurfaceCard
+                    class="h-full"
                     title="Simulator output"
-                    description="A directional view of how the score could move with a modest increase in contribution and validation."
+                    description="A rough estimate of how your score could move if you improve the main drivers."
                 >
                     <template #actions>
                         <el-tag effect="light" type="primary">{{ simulator.confidence }}</el-tag>
                     </template>
 
                     <p class="text-sm leading-6 text-slate-600">
-                        This is a scenario model, not a prediction. It shows how the score could move if you improve the specific drivers used in this analysis.
+                        This is a what-if view, not a promise. It shows how the score may move if you improve the main areas highlighted in this report.
                     </p>
 
                     <div class="grid gap-3 sm:grid-cols-3">
@@ -615,13 +825,13 @@ onMounted(async () => {
 
                 <SurfaceCard
                     class="h-full"
-                    title="Momentum and confidence"
-                    description="A separate read on how trustworthy the current profile is and what the current signal mix is emphasizing."
+                    title="How complete this report is"
+                    description="A quick check of what this report covered and how much signal it had to work with."
                 >
                     <div class="flex h-full flex-col gap-4">
-                        <div class="grid gap-3 sm:grid-cols-3">
+                        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                             <div
-                                v-for="item in analyticsHighlights"
+                                v-for="item in coverageHighlights"
                                 :key="item.label"
                                 class="rounded-2xl border border-slate-200 bg-slate-50 p-4"
                             >
@@ -630,18 +840,8 @@ onMounted(async () => {
                             </div>
                         </div>
 
-                        <div class="grid gap-3 sm:grid-cols-3">
-                            <div
-                                v-for="item in scoreRangeSummary"
-                                :key="item"
-                                class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-700"
-                            >
-                                {{ item }}
-                            </div>
-                        </div>
-
                         <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                            <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Current focus areas</p>
+                            <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Top areas this report picked up</p>
                             <div class="mt-3 flex flex-wrap gap-2">
                                 <span
                                     v-for="item in focusAreas"
@@ -653,15 +853,10 @@ onMounted(async () => {
                             </div>
                         </div>
 
-                        <ul class="space-y-3">
-                            <li
-                                v-for="note in simulator.notes"
-                                :key="note"
-                                class="rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-700"
-                            >
-                                {{ note }}
-                            </li>
-                        </ul>
+                        <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                            <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Big picture</p>
+                            <p class="mt-3 text-sm leading-6 text-slate-700">{{ analysis.trajectory.outlook || 'Trajectory becomes clearer as more windows and reviewable activity accumulate.' }}</p>
+                        </div>
                     </div>
                 </SurfaceCard>
             </section>

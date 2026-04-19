@@ -39,7 +39,7 @@ const toneClass = computed(() => toneMap[props.tone] ?? toneMap.blue);
 </script>
 
 <template>
-    <article class="dashboard-surface p-5">
+    <article class="dashboard-surface p-4">
         <div class="flex items-start justify-between gap-4">
             <div class="min-w-0">
                 <p class="text-sm font-medium text-slate-500">{{ title }}</p>

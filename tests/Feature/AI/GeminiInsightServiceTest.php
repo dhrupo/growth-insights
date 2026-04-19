@@ -43,6 +43,26 @@ class GeminiInsightServiceTest extends TestCase
                                         'recommendation_notes' => [
                                             ['index' => 1, 'ai_note' => 'This is the fastest signal to lift.', 'confidence' => 'high'],
                                         ],
+                                        'thirty_day_plan_notes' => [
+                                            ['index' => 0, 'ai_note' => 'Keep the first week narrowly scoped.'],
+                                        ],
+                                        'improvement_actions' => [
+                                            ['title' => 'Raise PR visibility', 'detail' => 'Open one smaller PR weekly.', 'why' => 'Reviewable work gets noticed faster.', 'metric' => '1 PR/week'],
+                                        ],
+                                        'how_to_get_noticed' => [
+                                            'summary' => 'More reviewable public artifacts will increase visibility.',
+                                            'actions' => [
+                                                ['action' => 'Write clearer PR descriptions', 'why' => 'They are easier to evaluate quickly.', 'evidence' => 'Low visible PR volume.'],
+                                            ],
+                                        ],
+                                        'trajectory_12_months' => [
+                                            'summary' => 'This profile is trending toward a stronger collaborator signal.',
+                                            'outlook' => 'If current pace holds, the visible profile should become easier to trust and review.',
+                                            'confidence' => 'medium',
+                                        ],
+                                        'suggested_repositories' => [
+                                            ['repo' => 'laravel/framework', 'why_fit' => 'Matches backend-heavy visible work.', 'realistic_contribution' => 'Start with docs or test fixes.'],
+                                        ],
                                     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
                                 ],
                             ],
@@ -63,6 +83,10 @@ class GeminiInsightServiceTest extends TestCase
         $this->assertTrue($second['cached']);
         $this->assertSame($first['snapshot_hash'], $second['snapshot_hash']);
         $this->assertSame($first['summary'], $second['summary']);
+        $this->assertCount(1, $first['improvement_actions']);
+        $this->assertSame('More reviewable public artifacts will increase visibility.', $first['how_to_get_noticed']['summary']);
+        $this->assertSame('This profile is trending toward a stronger collaborator signal.', $first['trajectory_12_months']['summary']);
+        $this->assertCount(1, $first['thirty_day_plan_notes']);
 
         $geminiRequests = collect(Http::recorded())->filter(function (array $record): bool {
             return str_contains($record[0]->url(), 'generativelanguage.googleapis.com');
@@ -84,6 +108,8 @@ class GeminiInsightServiceTest extends TestCase
         $this->assertSame('missing_api_key', $result['error']);
         $this->assertSame([], $result['weekly_plan_notes']);
         $this->assertSame([], $result['recommendation_notes']);
+        $this->assertSame([], $result['improvement_actions']);
+        $this->assertSame('', $result['how_to_get_noticed']['summary']);
 
         Http::assertNothingSent();
     }
@@ -109,6 +135,11 @@ class GeminiInsightServiceTest extends TestCase
                                         'summary' => 'Fallback model succeeded.',
                                         'weekly_plan_notes' => [],
                                         'recommendation_notes' => [],
+                                        'thirty_day_plan_notes' => [],
+                                        'improvement_actions' => [],
+                                        'how_to_get_noticed' => ['summary' => '', 'actions' => []],
+                                        'trajectory_12_months' => ['summary' => '', 'outlook' => '', 'confidence' => 'low'],
+                                        'suggested_repositories' => [],
                                     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
                                 ],
                             ],
@@ -157,6 +188,9 @@ class GeminiInsightServiceTest extends TestCase
                 ['day' => 'Day 1', 'title' => 'Pick one repo', 'action' => 'Choose a target.'],
                 ['day' => 'Day 2', 'title' => 'Ship a change', 'action' => 'Make one change.'],
             ],
+            'thirty_day_plan' => [
+                ['week' => 'Week 1', 'title' => 'Stabilize your baseline', 'action' => 'Ship one visible improvement.'],
+            ],
             'recommendations' => [
                 ['title' => 'Stay consistent', 'body' => 'Keep a weekly cadence.', 'sort_order' => 1],
                 ['title' => 'Improve testing', 'body' => 'Add one test.', 'sort_order' => 2],
@@ -168,6 +202,11 @@ class GeminiInsightServiceTest extends TestCase
                 ['week_start' => '2026-04-01', 'week_end' => '2026-04-07', 'total_events' => 6],
             ],
             'evidence_summary' => '4 active weeks, 16 active days, 12 commits, 3 PRs, and 1 issue.',
+            'repo_summary' => ['sampled_count' => 4, 'repos_touched' => 2, 'top_languages' => ['php', 'javascript']],
+            'trend_windows' => ['last_month' => ['score' => 74.2, 'confidence' => 81.4]],
+            'contribution_style' => ['label' => 'Builder', 'summary' => 'Build-and-ship profile.'],
+            'visibility_advice' => ['summary' => 'More reviewable work increases visibility.', 'actions' => []],
+            'suggested_repositories' => [['repo' => 'laravel/framework', 'why_fit' => 'Backend fit.', 'realistic_contribution' => 'Docs or tests.']],
         ];
     }
 }

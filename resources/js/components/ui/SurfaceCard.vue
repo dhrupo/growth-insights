@@ -12,7 +12,7 @@ defineProps({
 </script>
 
 <template>
-    <section class="dashboard-surface flex h-full flex-col p-5 sm:p-6">
+    <section class="dashboard-surface flex h-full flex-col p-4 sm:p-5">
         <div v-if="title || description || $slots.actions" class="flex items-start justify-between gap-4">
             <div class="min-w-0">
                 <h3 v-if="title" class="text-base font-semibold tracking-tight text-slate-950">
@@ -27,7 +27,7 @@ defineProps({
             </div>
         </div>
 
-        <div class="flex-1" :class="title || description || $slots.actions ? 'mt-5' : ''">
+        <div class="flex-1" :class="title || description || $slots.actions ? 'mt-4' : ''">
             <slot />
         </div>
     </section>

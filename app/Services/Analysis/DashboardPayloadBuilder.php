@@ -49,38 +49,38 @@ class DashboardPayloadBuilder
             'metrics' => [
                 [
                     'key' => 'growth-score',
-                    'title' => 'Growth score',
+                    'title' => 'Overall score',
                     'value' => $this->formatScore((float) $run->overall_score).'/10',
                     'delta' => ucfirst((string) $run->momentum_label),
                     'tone' => 'blue',
-                    'description' => 'Weighted score across consistency, diversity, and contribution on a 10-point scale.',
+                    'description' => 'A combined score based on consistency, range of work, and visible contributions.',
                     'icon' => 'DataLine',
                 ],
                 [
                     'key' => 'active-days',
                     'title' => 'Active days',
                     'value' => (string) ($activity['active_days'] ?? 0),
-                    'delta' => sprintf('%s confidence', $this->confidenceLabel((float) $run->confidence)),
+                    'delta' => sprintf('Report certainty: %s', $this->confidenceLabel((float) $run->confidence)),
                     'tone' => 'emerald',
-                    'description' => 'Days with visible coding, PR, or issue activity inside the analysis window.',
+                    'description' => 'How many days had visible coding, pull request, or issue activity.',
                     'icon' => 'TrendCharts',
                 ],
                 [
                     'key' => 'pull-requests',
-                    'title' => 'Pull requests',
+                    'title' => 'Visible pull requests',
                     'value' => (string) ($activity['pull_requests_count'] ?? 0),
                     'delta' => sprintf('%d issues', (int) ($activity['issues_count'] ?? 0)),
                     'tone' => 'amber',
-                    'description' => 'Visible collaboration output across the sampled repositories.',
+                    'description' => 'A quick sign of how much of your work is visible and reviewable by others.',
                     'icon' => 'Collection',
                 ],
                 [
                     'key' => 'testing-signal',
-                    'title' => 'Testing signal',
+                    'title' => 'Testing and quality',
                     'value' => (string) round((float) ($snapshot?->testing_score ?? 0)),
                     'delta' => sprintf('%d docs', round((float) ($snapshot?->documentation_score ?? 0))),
                     'tone' => 'rose',
-                    'description' => 'Quality and workflow evidence inferred from tests and automation.',
+                    'description' => 'A rough read on visible testing, checks, and quality-related work.',
                     'icon' => 'Operation',
                 ],
             ],
@@ -165,8 +165,16 @@ class DashboardPayloadBuilder
     {
         $profile = $run->context['profile'] ?? [];
         $activity = $run->context['activity'] ?? [];
+        $context = $run->context ?? [];
+        $enhancement = $run->ai_enhancement ?? [];
         $scoreBreakdownRaw = $run->metricSnapshot?->score_breakdown ?? [];
         $scoreBreakdown = collect($scoreBreakdownRaw);
+        $mergedRecommendations = collect($enhancement['merged_recommendations'] ?? []);
+        $mergedWeeklyPlan = collect($enhancement['merged_weekly_plan'] ?? []);
+        $mergedThirtyDayPlan = collect($enhancement['merged_thirty_day_plan'] ?? []);
+        $howToGetNoticed = $this->howToGetNoticedPayload($enhancement, $context, $run);
+        $improvementActions = $this->improvementActionsPayload($enhancement, $run);
+        $trajectory = $this->trajectoryPayload($enhancement, $context);
 
         if ($scoreBreakdown->isNotEmpty() && ! is_array($scoreBreakdown->first())) {
             $scoreBreakdown = $scoreBreakdown->map(
@@ -188,11 +196,11 @@ class DashboardPayloadBuilder
             ],
             'summary' => array_values(array_filter([
                 $run->summary,
-                $run->ai_enhancement['summary'] ?? null,
+                $enhancement['summary'] ?? null,
             ])),
             'evidenceSummary' => $run->evidence_summary,
-            'weeklyPlan' => collect($run->weekly_plan ?? [])->map(function (array $item) use ($run): array {
-                $notes = collect($run->ai_enhancement['merged_weekly_plan'] ?? []);
+            'weeklyPlan' => collect($run->weekly_plan ?? [])->map(function (array $item) use ($mergedWeeklyPlan): array {
+                $notes = $mergedWeeklyPlan;
                 $aiNote = $notes->firstWhere('day', $item['day'])['ai_note']
                     ?? $notes->firstWhere('title', $item['title'])['ai_note']
                     ?? null;
@@ -204,6 +212,15 @@ class DashboardPayloadBuilder
                     'aiNote' => $aiNote,
                 ];
             })->values()->all(),
+            'thirtyDayPlan' => collect($context['thirty_day_plan'] ?? [])->values()->map(function (array $item, int $index) use ($mergedThirtyDayPlan): array {
+                return [
+                    'week' => $item['week'] ?? "Week ".($index + 1),
+                    'title' => $item['title'] ?? 'Plan item',
+                    'action' => $item['action'] ?? null,
+                    'focus' => $item['focus'] ?? null,
+                    'aiNote' => $mergedThirtyDayPlan->get($index)['ai_note'] ?? null,
+                ];
+            })->all(),
             'connection' => [
                 ...$this->connectionState($connection, $run->github_username),
             ],
@@ -216,17 +233,77 @@ class DashboardPayloadBuilder
                 'categories' => $run->skillSignals->pluck('skill_key')->map(fn ($skill) => str($skill)->replace('_', ' ')->title()->toString())->all(),
                 'values' => $run->skillSignals->pluck('score')->map(fn ($value) => round((float) $value))->all(),
             ],
+            'skillSignals' => $run->skillSignals->sortByDesc('score')->values()->map(function ($signal): array {
+                $evidence = $signal->evidence ?? [];
+
+                return [
+                    'key' => $signal->skill_key,
+                    'label' => str($signal->skill_key)->replace('_', ' ')->title()->toString(),
+                    'score' => (float) $this->formatScore((float) $signal->score),
+                    'confidence' => $this->confidenceLabel((float) $signal->confidence),
+                    'rawConfidence' => round((float) $signal->confidence),
+                    'notes' => $signal->notes,
+                    'evidence' => $this->skillEvidenceBullets($evidence),
+                ];
+            })->all(),
             'strengths' => $this->mapInsights($run->strengths ?? []),
             'weaknesses' => $this->mapInsights($run->weaknesses ?? []),
-            'recommendations' => $run->recommendations->sortBy('sort_order')->map(fn ($item) => [
+            'recommendations' => $run->recommendations->sortBy('sort_order')->values()->map(function ($item, int $index) use ($mergedRecommendations): array {
+                $merged = $mergedRecommendations->get($index) ?? [];
+
+                return [
                 'id' => (string) $item->id,
                 'title' => $item->title,
                 'detail' => $item->body,
-                'impact' => ucfirst((string) ($item->metadata['confidence'] ?? 'Medium')),
+                'impact' => ucfirst((string) ($merged['ai_confidence'] ?? $item->metadata['confidence'] ?? 'Medium')),
                 'priority' => $item->category,
                 'why' => $item->metadata['why'] ?? null,
                 'evidence' => $item->metadata['evidence'] ?? null,
-            ])->values()->all(),
+                'successMetric' => $item->metadata['success_metric'] ?? null,
+                'focusArea' => $item->metadata['focus_area'] ?? null,
+                'aiNote' => $merged['ai_note'] ?? null,
+            ];
+            })->all(),
+            'improvementActions' => $improvementActions,
+            'howToGetNoticed' => $howToGetNoticed,
+            'trajectory' => $trajectory,
+            'contributionStyle' => [
+                'label' => $context['contribution_style']['label'] ?? 'Builder',
+                'summary' => $context['contribution_style']['summary'] ?? '',
+                'confidence' => $context['contribution_style']['confidence'] ?? 'Medium',
+                'evidence' => $context['contribution_style']['evidence'] ?? [],
+            ],
+            'credibilityNotice' => $context['credibility_notice'] ?? null,
+            'analyzedRepositories' => collect($context['repositories'] ?? [])->values()->map(function (array $repo): array {
+                return [
+                    'name' => $repo['name'] ?? $repo['full_name'] ?? 'Repository',
+                    'fullName' => $repo['full_name'] ?? null,
+                    'url' => $repo['html_url'] ?? null,
+                    'visibility' => $repo['visibility'] ?? 'public',
+                    'language' => $repo['language'] ?? 'Unknown',
+                    'lastActivity' => $repo['last_activity'] ?? $repo['updated_at'] ?? null,
+                    'commitCount' => (int) ($repo['commit_count'] ?? 0),
+                    'pullRequestCount' => (int) ($repo['pull_request_count'] ?? 0),
+                    'issueCount' => (int) ($repo['issue_count'] ?? 0),
+                    'description' => $repo['description'] ?? null,
+                    'signals' => $repo['signals'] ?? [],
+                ];
+            })->all(),
+            'suggestedRepositories' => array_values(array_filter(array_map(function (array $item): ?array {
+                if (($item['repo'] ?? '') === '') {
+                    return null;
+                }
+
+                return [
+                    'repo' => $item['repo'],
+                    'url' => $item['url'] ?? null,
+                    'language' => $item['language'] ?? null,
+                    'description' => $item['description'] ?? null,
+                    'whyFit' => $item['why_fit'] ?? null,
+                    'realisticContribution' => $item['realistic_contribution'] ?? null,
+                    'stars' => isset($item['stars']) ? (int) $item['stars'] : null,
+                ];
+            }, ($enhancement['suggested_repositories'] ?: ($context['suggested_repositories'] ?? []))))),
             'source' => $run->analysis_mode === 'public_private' ? 'mixed' : 'live',
             'lastAnalyzedAt' => optional($run->completed_at)->toIso8601String(),
         ];
@@ -249,8 +326,8 @@ class DashboardPayloadBuilder
                     : 'Your GitHub profile',
                 'role' => '',
                 'bio' => $connection !== null
-                    ? 'GitHub is connected. Run an analysis to turn the account into a readable growth profile.'
-                    : 'Connect GitHub to analyze your own activity and build a private-aware profile.',
+                    ? 'GitHub is connected. Run an analysis to turn your activity into an easy-to-read profile.'
+                    : 'Connect GitHub to turn your activity into an easy-to-read profile.',
                 'followers' => 0,
                 'publicRepos' => 0,
                 'contributionStreak' => 0,
@@ -259,6 +336,7 @@ class DashboardPayloadBuilder
             'summary' => [],
             'evidenceSummary' => null,
             'weeklyPlan' => [],
+            'thirtyDayPlan' => [],
             'connection' => $this->connectionState($connection, $username),
             'scoreBreakdown' => [
                 'categories' => [],
@@ -269,9 +347,30 @@ class DashboardPayloadBuilder
                 'categories' => [],
                 'values' => [],
             ],
+            'skillSignals' => [],
             'strengths' => [],
             'weaknesses' => [],
             'recommendations' => [],
+            'improvementActions' => [],
+            'howToGetNoticed' => [
+                'summary' => '',
+                'actions' => [],
+            ],
+            'trajectory' => [
+                'windows' => [],
+                'summary' => '',
+                'outlook' => '',
+                'confidence' => 'Low',
+            ],
+            'contributionStyle' => [
+                'label' => '',
+                'summary' => '',
+                'confidence' => '',
+                'evidence' => [],
+            ],
+            'credibilityNotice' => null,
+            'analyzedRepositories' => [],
+            'suggestedRepositories' => [],
             'source' => 'empty',
             'lastAnalyzedAt' => null,
         ];
@@ -312,6 +411,138 @@ class DashboardPayloadBuilder
     private function scoreImpactLabel(float $score): string
     {
         return $this->formatScore($score).'/10';
+    }
+
+    private function skillEvidenceBullets(array $evidence): array
+    {
+        $bullets = [];
+
+        if (isset($evidence['language_share'])) {
+            $bullets[] = sprintf('Language share: %.1f%%', ((float) $evidence['language_share']) * 100);
+        }
+
+        if (isset($evidence['backend_share'])) {
+            $bullets[] = sprintf('Backend share: %.1f%%', ((float) $evidence['backend_share']) * 100);
+        }
+
+        if (isset($evidence['frontend_share'])) {
+            $bullets[] = sprintf('Frontend share: %.1f%%', ((float) $evidence['frontend_share']) * 100);
+        }
+
+        if (isset($evidence['keyword_hits'])) {
+            $bullets[] = sprintf('Keyword hits: %d', (int) $evidence['keyword_hits']);
+        }
+
+        if (isset($evidence['pull_requests_count'])) {
+            $bullets[] = sprintf('PRs: %d', (int) $evidence['pull_requests_count']);
+        }
+
+        if (isset($evidence['issues_count'])) {
+            $bullets[] = sprintf('Issues: %d', (int) $evidence['issues_count']);
+        }
+
+        if (isset($evidence['repos_touched'])) {
+            $bullets[] = sprintf('Repositories touched: %d', (int) $evidence['repos_touched']);
+        }
+
+        return array_values($bullets);
+    }
+
+    private function howToGetNoticedPayload(array $enhancement, array $context, AnalysisRun $run): array
+    {
+        $actions = array_values(array_filter(array_map(function (array $item): ?array {
+            if (($item['action'] ?? '') === '') {
+                return null;
+            }
+
+            return [
+                'action' => $item['action'] ?? '',
+                'why' => $item['why'] ?? '',
+                'evidence' => $item['evidence'] ?? '',
+            ];
+        }, ($enhancement['how_to_get_noticed']['actions'] ?? []))));
+
+        if ($actions === []) {
+            $actions = array_values(array_filter(array_map(function (array $item): ?array {
+                if (($item['action'] ?? '') === '') {
+                    return null;
+                }
+
+                return [
+                    'action' => $item['action'] ?? '',
+                    'why' => $item['why'] ?? '',
+                    'evidence' => $item['evidence'] ?? '',
+                ];
+            }, ($context['visibility_advice']['actions'] ?? []))));
+        }
+
+        if ($actions === []) {
+            $actions = $run->recommendations->sortBy('sort_order')->take(3)->values()->map(function ($item): array {
+                return [
+                    'action' => $item->title,
+                    'why' => $item->metadata['why'] ?? $item->body,
+                    'evidence' => $item->metadata['success_metric'] ?? '',
+                ];
+            })->all();
+        }
+
+        return [
+            'summary' => $enhancement['how_to_get_noticed']['summary']
+                ?? ($context['visibility_advice']['summary'] ?? 'Increase reviewable output and visible collaboration to improve discoverability.'),
+            'actions' => $actions,
+        ];
+    }
+
+    private function improvementActionsPayload(array $enhancement, AnalysisRun $run): array
+    {
+        $actions = array_values(array_filter(array_map(function (array $item): ?array {
+            if (($item['title'] ?? '') === '' && ($item['detail'] ?? '') === '') {
+                return null;
+            }
+
+            return [
+                'title' => $item['title'] ?? '',
+                'detail' => $item['detail'] ?? '',
+                'why' => $item['why'] ?? '',
+                'metric' => $item['metric'] ?? '',
+            ];
+        }, $enhancement['improvement_actions'] ?? [])));
+
+        if ($actions !== []) {
+            return $actions;
+        }
+
+        return $run->recommendations->sortBy('sort_order')->take(3)->values()->map(function ($item): array {
+            return [
+                'title' => $item->title,
+                'detail' => $item->body,
+                'why' => $item->metadata['why'] ?? '',
+                'metric' => $item->metadata['success_metric'] ?? '',
+            ];
+        })->all();
+    }
+
+    private function trajectoryPayload(array $enhancement, array $context): array
+    {
+        $windows = $context['trajectory'] ?? [];
+        $windowCollection = collect(is_array($windows) ? $windows : []);
+        $averageConfidence = (float) $windowCollection->avg('confidence');
+        $averageScore = (float) $windowCollection->avg('score');
+        $latestMomentum = (string) ($windowCollection->last()['momentum'] ?? 'stable');
+        $enhancedConfidence = (string) ($enhancement['trajectory_12_months']['confidence'] ?? '');
+        $hasEnhancedTrajectory = filled($enhancement['trajectory_12_months']['summary'] ?? null)
+            || filled($enhancement['trajectory_12_months']['outlook'] ?? null);
+
+        return [
+            'windows' => $windows,
+            'summary' => $enhancement['trajectory_12_months']['summary']
+                ?? sprintf('Visible signal is %s with an average observed score of %s/10 across the tracked windows.', $latestMomentum, $this->formatScore($averageScore)),
+            'outlook' => $enhancement['trajectory_12_months']['outlook']
+                ?? 'If the current pace holds, the strongest gains should come from keeping visible output steady and improving reviewable collaboration artifacts.',
+            'confidence' => ucfirst($hasEnhancedTrajectory && $enhancedConfidence !== ''
+                ? $enhancedConfidence
+                : $this->confidenceLabel($averageConfidence)),
+        ];
     }
 
 }

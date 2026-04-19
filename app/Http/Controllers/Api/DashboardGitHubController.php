@@ -28,6 +28,10 @@ class DashboardGitHubController extends ApiController
         GrowthAnalysisService $growthAnalysisService,
         DashboardPayloadBuilder $payloadBuilder,
     ): JsonResponse {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(90);
+        }
+
         $connection = $this->currentConnection($request, $growthAnalysisService);
 
         if ($connection === null) {
@@ -110,9 +114,18 @@ class DashboardGitHubController extends ApiController
         $githubUsername = (string) $request->session()->get('github.current_username', '');
 
         if ($githubUsername === '') {
-            return null;
+            return GitHubConnection::query()
+                ->whereNotNull('access_token')
+                ->latest('connected_at')
+                ->latest('id')
+                ->first();
         }
 
-        return $growthAnalysisService->connectionForUsername($githubUsername);
+        return $growthAnalysisService->connectionForUsername($githubUsername)
+            ?? GitHubConnection::query()
+                ->whereNotNull('access_token')
+                ->latest('connected_at')
+                ->latest('id')
+                ->first();
     }
 }

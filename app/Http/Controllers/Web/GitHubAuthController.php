@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Models\GitHubConnection;
-use App\Services\Analysis\GrowthAnalysisService;
 use App\Services\GitHub\GitHubApiClient;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
@@ -46,7 +45,6 @@ class GitHubAuthController extends Controller
     public function callback(
         Request $request,
         GitHubApiClient $gitHubApiClient,
-        GrowthAnalysisService $growthAnalysisService
     ): RedirectResponse {
         $state = (string) $request->session()->pull('github.oauth.state', '');
 
@@ -119,24 +117,9 @@ class GitHubAuthController extends Controller
                 ],
             );
 
-            try {
-                $growthAnalysisService->syncConnection($connection);
-            } catch (Throwable $throwable) {
-                $connection->forceFill([
-                    'sync_status' => 'failed',
-                    'sync_error' => $throwable->getMessage(),
-                ])->save();
-
-                Log::error('GitHub connection sync failed after OAuth login.', [
-                    'username' => $resolvedUsername,
-                    'connection_id' => $connection->id,
-                    'exception' => $throwable::class,
-                    'message' => $throwable->getMessage(),
-                ]);
-            }
-
             $request->session()->put('github.current_connection_id', $connection->id);
             $request->session()->put('github.current_username', $resolvedUsername);
+            $request->session()->save();
 
             Log::info('GitHub OAuth login completed.', [
                 'resolved_username' => $resolvedUsername,

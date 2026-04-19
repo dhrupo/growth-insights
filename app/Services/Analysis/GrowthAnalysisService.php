@@ -81,7 +81,9 @@ class GrowthAnalysisService
 
     private function analyze(string $githubUsername, ?string $token, ?GitHubConnection $connection, string $analysisMode): AnalysisRun
     {
+        $historyWindowDays = 365;
         $windowDays = 56;
+        $historyWindowStart = now()->subDays($historyWindowDays - 1)->startOfDay();
         $windowStart = now()->subDays($windowDays - 1)->startOfDay();
         $windowEnd = now()->endOfDay();
         $startedAt = now();
@@ -92,37 +94,56 @@ class GrowthAnalysisService
         $repos = collect($repos)
             ->filter(static fn (array $repo): bool => ! (bool) ($repo['archived'] ?? false))
             ->sortByDesc(static fn (array $repo): string => (string) ($repo['updated_at'] ?? ''))
-            ->take(6)
+            ->take(10)
             ->values();
 
-        $facts = $this->buildFacts(
+        $historyFacts = $this->buildFacts(
             githubUsername: $resolvedUsername,
             resolvedUsername: $resolvedUsername,
             profile: $profile,
             repositories: $repos,
             token: $token,
-            windowStart: $windowStart,
+            windowStart: $historyWindowStart,
             windowEnd: $windowEnd,
             analysisMode: $analysisMode,
         );
+
+        $facts = $this->buildWindowFacts($historyFacts, $windowStart, $windowEnd);
 
         $metrics = $this->scoreCalculator->calculate($facts);
         $weeklyBuckets = $facts['weekly_buckets'];
         $momentumLabel = $this->weeklyTimelineBuilder->momentumLabel($weeklyBuckets);
         $skillSignals = $this->skillSignalBuilder->build($facts);
+        $trajectory = $this->buildTrajectoryWindows($historyFacts, $windowEnd);
         $strengths = $this->buildStrengths($facts, $metrics, $momentumLabel, $skillSignals);
         $weaknesses = $this->buildWeaknesses($facts, $metrics, $momentumLabel, $skillSignals);
         $facts['strengths'] = $strengths;
         $facts['weaknesses'] = $weaknesses;
+        $contributionStyle = $this->buildContributionStyle($facts, $metrics, $skillSignals);
+        $visibilityAdvice = $this->buildVisibilityAdvice($facts, $metrics, $skillSignals, $momentumLabel);
+        $suggestedRepositories = $this->buildSuggestedRepositories($facts, $resolvedUsername, $token);
 
         $weeklyPlan = $this->recommendationBuilder->weeklyPlan($facts, $metrics, $skillSignals, $momentumLabel);
+        $thirtyDayPlan = $this->recommendationBuilder->monthlyPlan($facts, $metrics, $skillSignals, $momentumLabel);
         $recommendations = $this->recommendationBuilder->build($facts, $metrics, $skillSignals, $momentumLabel);
         $evidenceSummary = $this->buildEvidenceSummary($facts, $metrics, $momentumLabel);
         $summary = $this->buildSummary($facts, $metrics, $momentumLabel, $strengths, $weaknesses);
-        $context = $this->buildContext($facts, $metrics, $weeklyBuckets, $momentumLabel);
+        $context = $this->buildContext(
+            $facts,
+            $metrics,
+            $weeklyBuckets,
+            $momentumLabel,
+            $historyFacts['analyzed_repositories'] ?? [],
+            $trajectory,
+            $contributionStyle,
+            $visibilityAdvice,
+            $suggestedRepositories,
+            $thirtyDayPlan,
+        );
         $ruleBasedSections = [
             'summary' => $summary,
             'weekly_plan' => $weeklyPlan,
+            'thirty_day_plan' => $thirtyDayPlan,
             'recommendations' => $recommendations,
         ];
         $aiEnhancement = $this->geminiInsightService->enhance([
@@ -131,14 +152,23 @@ class GrowthAnalysisService
             'strengths' => $strengths,
             'weaknesses' => $weaknesses,
             'weekly_plan' => $weeklyPlan,
+            'thirty_day_plan' => $thirtyDayPlan,
             'recommendations' => $recommendations,
             'skill_signals' => $skillSignals,
             'weekly_buckets' => $weeklyBuckets,
             'evidence_summary' => $evidenceSummary,
+            'analyzed_repositories' => $historyFacts['analyzed_repositories'] ?? [],
+            'repo_summary' => $historyFacts['repo_summary'] ?? [],
+            'trend_windows' => $trajectory,
+            'contribution_style' => $contributionStyle,
+            'visibility_advice' => $visibilityAdvice,
+            'suggested_repositories' => $suggestedRepositories,
         ]);
         $weeklyPlanWithAi = $this->mergeWeeklyPlanEnhancement($weeklyPlan, $aiEnhancement['weekly_plan_notes'] ?? []);
+        $thirtyDayPlanWithAi = $this->mergeThirtyDayPlanEnhancement($thirtyDayPlan, $aiEnhancement['thirty_day_plan_notes'] ?? []);
         $recommendationsWithAi = $this->mergeRecommendationEnhancement($recommendations, $aiEnhancement['recommendation_notes'] ?? []);
         $aiEnhancement['merged_weekly_plan'] = $weeklyPlanWithAi;
+        $aiEnhancement['merged_thirty_day_plan'] = $thirtyDayPlanWithAi;
         $aiEnhancement['merged_recommendations'] = $recommendationsWithAi;
         $aiEnhancement['rule_based_sections'] = $ruleBasedSections;
 
@@ -289,9 +319,9 @@ class GrowthAnalysisService
 
             $repositoryNames[] = $fullName;
 
-            foreach ($this->github->repositoryLanguages($fullName, $token) as $language => $bytes) {
-                $language = strtolower((string) $language);
-                $languageBytes[$language] = ($languageBytes[$language] ?? 0) + (int) $bytes;
+            $primaryLanguage = strtolower((string) ($repository['language'] ?? ''));
+            if ($primaryLanguage !== '') {
+                $languageBytes[$primaryLanguage] = ($languageBytes[$primaryLanguage] ?? 0) + max(1, (int) ($repository['size'] ?? 1));
             }
 
             $commits = $this->github->repositoryCommits($fullName, $githubUsername, $windowStart, $token);
@@ -421,12 +451,33 @@ class GrowthAnalysisService
             'commit_messages' => array_slice($commitMessages, 0, 30),
             'pull_request_titles' => array_slice($pullRequestTitles, 0, 30),
             'issue_titles' => array_slice($issueTitles, 0, 30),
+            'commit_records' => collect($events)->where('type', 'commit')->map(fn (array $event): array => [
+                'date' => $event['date'],
+                'repo' => $event['repo'],
+                'message' => $event['message'],
+            ])->values()->all(),
+            'pull_request_records' => collect($events)->where('type', 'pull_request')->map(fn (array $event): array => [
+                'date' => $event['date'],
+                'repo' => $event['repo'],
+                'message' => $event['message'],
+            ])->values()->all(),
+            'issue_records' => collect($events)->where('type', 'issue')->map(fn (array $event): array => [
+                'date' => $event['date'],
+                'repo' => $event['repo'],
+                'message' => $event['message'],
+            ])->values()->all(),
             'events' => $events,
             'weekly_buckets' => $weeklyBuckets,
             'collaboration_score' => $collaborationScore,
             'testing_score' => $testingScore,
             'documentation_score' => $documentationScore,
             'momentum_score' => $momentumScore,
+            'analyzed_repositories' => $this->buildAnalyzedRepositories($repositories, $events, $languageBytes, $windowEnd),
+            'repo_summary' => [
+                'sampled_count' => $repositories->count(),
+                'repos_touched' => count($reposTouched),
+                'top_languages' => collect($languageShares)->sortDesc()->keys()->take(3)->values()->all(),
+            ],
             'metric_evidence' => [
                 'repos_touched' => count($reposTouched),
                 'language_distribution' => array_slice($languageShares, 0, 5, true),
@@ -446,6 +497,85 @@ class GrowthAnalysisService
                 'analysis_mode' => $analysisMode,
             ],
         ];
+    }
+
+    private function buildWindowFacts(array $facts, Carbon $windowStart, Carbon $windowEnd): array
+    {
+        $events = collect($facts['events'] ?? [])->filter(function (array $event) use ($windowStart, $windowEnd): bool {
+            $date = Carbon::parse($event['date']);
+
+            return $date->betweenIncluded($windowStart, $windowEnd);
+        })->values();
+
+        $activeDays = $events->pluck('date')->unique()->count();
+        $reposTouched = $events->pluck('repo')->filter()->unique()->count();
+        $commitCount = $events->where('type', 'commit')->count();
+        $pullRequestCount = $events->where('type', 'pull_request')->count();
+        $issueCount = $events->where('type', 'issue')->count();
+        $weeklyBuckets = $this->weeklyTimelineBuilder->build([
+            'window_start' => $windowStart->toDateString(),
+            'window_end' => $windowEnd->toDateString(),
+            'events' => $events->all(),
+        ]);
+
+        $activeWeeks = collect($weeklyBuckets)
+            ->filter(static fn (array $bucket): bool => ($bucket['total_events'] ?? 0) > 0)
+            ->count();
+
+        $commitMessages = collect($facts['commit_records'] ?? [])
+            ->filter(fn (array $record): bool => Carbon::parse($record['date'])->betweenIncluded($windowStart, $windowEnd))
+            ->pluck('message')
+            ->take(30)
+            ->all();
+
+        $pullRequestTitles = collect($facts['pull_request_records'] ?? [])
+            ->filter(fn (array $record): bool => Carbon::parse($record['date'])->betweenIncluded($windowStart, $windowEnd))
+            ->pluck('message')
+            ->take(30)
+            ->all();
+
+        $issueTitles = collect($facts['issue_records'] ?? [])
+            ->filter(fn (array $record): bool => Carbon::parse($record['date'])->betweenIncluded($windowStart, $windowEnd))
+            ->pluck('message')
+            ->take(30)
+            ->all();
+
+        $windowFacts = $facts;
+        $windowFacts['window_start'] = $windowStart->toDateString();
+        $windowFacts['window_end'] = $windowEnd->toDateString();
+        $windowFacts['window_days'] = $windowStart->diffInDays($windowEnd) + 1;
+        $windowFacts['total_weeks'] = max(1, $windowStart->diffInWeeks($windowEnd) + 1);
+        $windowFacts['active_weeks'] = $activeWeeks;
+        $windowFacts['active_days'] = $activeDays;
+        $windowFacts['commits_count'] = $commitCount;
+        $windowFacts['pull_requests_count'] = $pullRequestCount;
+        $windowFacts['issues_count'] = $issueCount;
+        $windowFacts['repos_touched'] = $reposTouched;
+        $windowFacts['commit_messages'] = $commitMessages;
+        $windowFacts['pull_request_titles'] = $pullRequestTitles;
+        $windowFacts['issue_titles'] = $issueTitles;
+        $windowFacts['events'] = $events->all();
+        $windowFacts['weekly_buckets'] = $weeklyBuckets;
+        $windowFacts['collaboration_score'] = $this->collaborationScore($pullRequestCount, $issueCount, $reposTouched);
+        $windowFacts['testing_score'] = $this->keywordScore($commitMessages, $pullRequestTitles, ['test', 'tests', 'pest', 'phpunit', 'jest', 'coverage']);
+        $windowFacts['documentation_score'] = $this->keywordScore($commitMessages, $issueTitles, ['docs', 'documentation', 'readme', 'guide', 'doc']);
+        $windowFacts['momentum_score'] = $this->momentumScore($weeklyBuckets);
+        $windowFacts['metric_evidence'] = [
+            'repos_touched' => $reposTouched,
+            'language_distribution' => array_slice($facts['language_shares'] ?? [], 0, 5, true),
+            'commit_count' => $commitCount,
+            'pull_request_count' => $pullRequestCount,
+            'issue_count' => $issueCount,
+            'active_days' => $activeDays,
+        ];
+        $windowFacts['analyzed_repositories'] = $this->filterRepositoriesForWindow(
+            $facts['analyzed_repositories'] ?? [],
+            $events->all(),
+            $windowStart,
+            $windowEnd,
+        );
+
+        return $windowFacts;
     }
 
     private function buildStrengths(array $facts, array $metrics, string $momentumLabel, array $skillSignals): array
@@ -545,11 +675,25 @@ class GrowthAnalysisService
             $lowestSignal = collect($skillSignals)->sortBy('score')->first();
 
             if (($lowestSignal['score'] ?? 0) < 45) {
+                $evidence = $lowestSignal['evidence'] ?? [];
+                $confidence = round((float) ($lowestSignal['confidence'] ?? 0));
+                $languageShare = isset($evidence['language_share'])
+                    ? sprintf('Language share %.1f%%.', ((float) $evidence['language_share']) * 100)
+                    : null;
+                $keywordHits = isset($evidence['keyword_hits'])
+                    ? sprintf('Keyword hits %d.', (int) $evidence['keyword_hits'])
+                    : null;
+
                 $weaknesses[] = [
                     'key' => $lowestSignal['skill_key'],
-                    'title' => ucfirst(str_replace('_', ' ', $lowestSignal['skill_key'])) . ' signal is weak',
+                    'title' => ucfirst(str_replace('_', ' ', $lowestSignal['skill_key'])) . ' signal is limited',
                     'score' => $lowestSignal['score'],
-                    'evidence' => $lowestSignal['notes'],
+                    'evidence' => trim(implode(' ', array_filter([
+                        $lowestSignal['notes'] ?? '',
+                        $languageShare,
+                        $keywordHits,
+                        sprintf('Confidence %d%%.', $confidence),
+                    ]))),
                 ];
             }
         }
@@ -581,7 +725,18 @@ class GrowthAnalysisService
         );
     }
 
-    private function buildContext(array $facts, array $metrics, array $weeklyBuckets, string $momentumLabel): array
+    private function buildContext(
+        array $facts,
+        array $metrics,
+        array $weeklyBuckets,
+        string $momentumLabel,
+        array $analyzedRepositories,
+        array $trajectory,
+        array $contributionStyle,
+        array $visibilityAdvice,
+        array $suggestedRepositories,
+        array $thirtyDayPlan
+    ): array
     {
         return [
             'profile' => $facts['profile'],
@@ -603,7 +758,277 @@ class GrowthAnalysisService
                 'label' => $momentumLabel,
                 'weekly_buckets' => array_map(static fn (array $bucket) => Arr::except($bucket, ['total_events']), $weeklyBuckets),
             ],
+            'repositories' => $analyzedRepositories,
+            'trajectory' => $trajectory,
+            'contribution_style' => $contributionStyle,
+            'visibility_advice' => $visibilityAdvice,
+            'suggested_repositories' => $suggestedRepositories,
+            'thirty_day_plan' => $thirtyDayPlan,
+            'credibility_notice' => sprintf(
+                'Insights are based on %s GitHub activity from the connected account. Private work is only included when GitHub authorization allows it.',
+                ($facts['profile']['analysis_mode'] ?? 'public_only') === 'public_private' ? 'public and private' : 'public'
+            ),
         ];
+    }
+
+    private function buildAnalyzedRepositories(Collection $repositories, array $events, array $languageBytes, Carbon $windowEnd): array
+    {
+        $eventsByRepo = collect($events)->groupBy('repo');
+        $topLanguages = array_keys(array_slice($languageBytes, 0, 3, true));
+        $knownRepositories = $repositories->keyBy(fn (array $repository): string => (string) ($repository['full_name'] ?? ''));
+
+        $baseRepositories = $repositories->map(function (array $repository) use ($eventsByRepo, $topLanguages, $windowEnd): array {
+            $fullName = (string) ($repository['full_name'] ?? '');
+            $repoEvents = collect($eventsByRepo->get($fullName, []));
+            $lastActivity = $repoEvents->max('date') ?: ($repository['pushed_at'] ?? $repository['updated_at'] ?? null);
+
+            return [
+                'full_name' => $fullName,
+                'name' => (string) ($repository['name'] ?? $fullName),
+                'html_url' => $repository['html_url'] ?? null,
+                'description' => $repository['description'] ?? null,
+                'visibility' => (bool) ($repository['private'] ?? false) ? 'private' : 'public',
+                'language' => $repository['language'] ?? null,
+                'updated_at' => $repository['updated_at'] ?? null,
+                'pushed_at' => $repository['pushed_at'] ?? null,
+                'stars' => (int) ($repository['stargazers_count'] ?? 0),
+                'forks' => (int) ($repository['forks_count'] ?? 0),
+                'active_days' => $repoEvents->pluck('date')->unique()->count(),
+                'commit_count' => $repoEvents->where('type', 'commit')->count(),
+                'pull_request_count' => $repoEvents->where('type', 'pull_request')->count(),
+                'issue_count' => $repoEvents->where('type', 'issue')->count(),
+                'last_activity' => $lastActivity,
+                'signals' => [
+                    'language_mix' => in_array(strtolower((string) ($repository['language'] ?? '')), $topLanguages, true),
+                    'contribution' => $repoEvents->isNotEmpty(),
+                    'skill_inference' => $repoEvents->isNotEmpty() || ! empty($repository['language']),
+                ],
+            ];
+        });
+
+        $eventOnlyRepositories = $eventsByRepo
+            ->keys()
+            ->filter(fn ($fullName): bool => filled($fullName) && ! $knownRepositories->has($fullName))
+            ->map(function (string $fullName) use ($eventsByRepo, $topLanguages): array {
+                $repoEvents = collect($eventsByRepo->get($fullName, []));
+                $language = null;
+
+                foreach ($topLanguages as $topLanguage) {
+                    if (str_contains(strtolower($fullName), strtolower($topLanguage))) {
+                        $language = ucfirst($topLanguage);
+                        break;
+                    }
+                }
+
+                return [
+                    'full_name' => $fullName,
+                    'name' => (string) str($fullName)->afterLast('/'),
+                    'html_url' => filled($fullName) ? 'https://github.com/'.$fullName : null,
+                    'description' => null,
+                    'visibility' => 'public',
+                    'language' => $language,
+                    'updated_at' => null,
+                    'pushed_at' => null,
+                    'stars' => 0,
+                    'forks' => 0,
+                    'active_days' => $repoEvents->pluck('date')->unique()->count(),
+                    'commit_count' => $repoEvents->where('type', 'commit')->count(),
+                    'pull_request_count' => $repoEvents->where('type', 'pull_request')->count(),
+                    'issue_count' => $repoEvents->where('type', 'issue')->count(),
+                    'last_activity' => $repoEvents->max('date'),
+                    'signals' => [
+                        'language_mix' => false,
+                        'contribution' => true,
+                        'skill_inference' => true,
+                    ],
+                ];
+            });
+
+        return $baseRepositories
+            ->concat($eventOnlyRepositories)
+            ->sortByDesc(function (array $repository): array {
+                $activity = (int) (($repository['commit_count'] ?? 0) + ($repository['pull_request_count'] ?? 0) + ($repository['issue_count'] ?? 0));
+
+                return [$activity, (string) ($repository['last_activity'] ?? '')];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function filterRepositoriesForWindow(array $repositories, array $events, Carbon $windowStart, Carbon $windowEnd): array
+    {
+        $eventsByRepo = collect($events)->groupBy('repo');
+
+        return collect($repositories)->map(function (array $repository) use ($eventsByRepo): array {
+            $fullName = (string) ($repository['full_name'] ?? '');
+            $repoEvents = collect($eventsByRepo->get($fullName, []));
+
+            $repository['active_days'] = $repoEvents->pluck('date')->unique()->count();
+            $repository['commit_count'] = $repoEvents->where('type', 'commit')->count();
+            $repository['pull_request_count'] = $repoEvents->where('type', 'pull_request')->count();
+            $repository['issue_count'] = $repoEvents->where('type', 'issue')->count();
+            $repository['last_activity'] = $repoEvents->max('date') ?: $repository['last_activity'] ?? $repository['pushed_at'] ?? null;
+            $repository['in_window'] = $repoEvents->isNotEmpty();
+
+            return $repository;
+        })->filter(function (array $repository): bool {
+            return ($repository['in_window'] ?? false)
+                || (($repository['signals']['language_mix'] ?? false) === true);
+        })->values()->all();
+    }
+
+    private function buildContributionStyle(array $facts, array $metrics, array $skillSignals): array
+    {
+        $collaborationScore = (float) ($facts['collaboration_score'] ?? 0);
+        $contributionScore = (float) ($metrics['contribution_score'] ?? 0);
+        $diversityScore = (float) ($metrics['diversity_score'] ?? 0);
+        $testingScore = (float) ($facts['testing_score'] ?? 0);
+
+        $label = 'Builder';
+        $summary = 'You are showing a build-and-ship profile with more visible output than review or maintenance signals.';
+        $evidence = [
+            sprintf('%d commits and %d repos touched in the current window.', $facts['commits_count'], $facts['repos_touched']),
+        ];
+
+        if ($collaborationScore >= 70) {
+            $label = 'Collaborator';
+            $summary = 'Your visible profile is strongest when work is reviewable across pull requests and multiple repositories.';
+            $evidence[] = sprintf('%d PRs and %d touched repos are driving collaboration visibility.', $facts['pull_requests_count'], $facts['repos_touched']);
+        } elseif ($testingScore >= 45) {
+            $label = 'Maintainer';
+            $summary = 'Your profile is leaning toward maintainable, quality-aware work rather than pure shipping volume.';
+            $evidence[] = sprintf('Testing signal %.0f and documentation signal %.0f support a maintainer profile.', $facts['testing_score'], $facts['documentation_score']);
+        } elseif ($diversityScore >= 65 && count($skillSignals) >= 3) {
+            $label = 'Generalist';
+            $summary = 'Your visible work spans enough tools and surfaces to read as a generalist profile.';
+            $evidence[] = sprintf('Diversity score %.1f with %d visible skill signals.', $diversityScore, count($skillSignals));
+        } elseif ($contributionScore >= 65) {
+            $label = 'Specialist';
+            $summary = 'Your strongest visible work clusters around a narrower contribution pattern and a primary signal area.';
+            $evidence[] = sprintf('Contribution score %.1f is higher than diversity score %.1f.', $contributionScore, $diversityScore);
+        }
+
+        return [
+            'label' => $label,
+            'summary' => $summary,
+            'confidence' => $this->confidenceLabel((float) ($metrics['confidence'] ?? 0)),
+            'evidence' => array_values(array_filter($evidence)),
+        ];
+    }
+
+    private function buildVisibilityAdvice(array $facts, array $metrics, array $skillSignals, string $momentumLabel): array
+    {
+        $actions = [];
+
+        if (($facts['pull_requests_count'] ?? 0) < 4) {
+            $actions[] = [
+                'action' => 'Open smaller, reviewable pull requests more often.',
+                'why' => 'PRs are easier for other engineers to notice and evaluate than isolated commit volume.',
+                'evidence' => sprintf('Only %d visible PRs were found in the current analysis window.', $facts['pull_requests_count'] ?? 0),
+            ];
+        }
+
+        if (($facts['repos_touched'] ?? 0) < 3) {
+            $actions[] = [
+                'action' => 'Spread one contribution each month into a second or third repository.',
+                'why' => 'Cross-repo activity increases visible breadth and makes your work easier to discover.',
+                'evidence' => sprintf('Current activity is concentrated in %d repositories.', $facts['repos_touched'] ?? 0),
+            ];
+        }
+
+        if (($facts['testing_score'] ?? 0) < 25) {
+            $actions[] = [
+                'action' => 'Attach tests or validation paths to visible work whenever possible.',
+                'why' => 'Tests make contributions easier to trust and signal engineering maturity quickly.',
+                'evidence' => sprintf('Testing signal is currently %.0f.', $facts['testing_score'] ?? 0),
+            ];
+        }
+
+        if ($momentumLabel === 'declining') {
+            $actions[] = [
+                'action' => 'Reduce scope and keep a weekly public artifact even if it is small.',
+                'why' => 'A steady cadence makes you easier to notice than occasional large bursts followed by silence.',
+                'evidence' => 'Recent weekly activity is weaker than the prior period.',
+            ];
+        }
+
+        return [
+            'summary' => 'The easiest way to become more noticeable on GitHub is to increase reviewable output, not just raw activity.',
+            'actions' => array_slice($actions, 0, 4),
+        ];
+    }
+
+    private function buildTrajectoryWindows(array $facts, Carbon $windowEnd): array
+    {
+        $windows = [
+            'last_week' => ['label' => 'Last week', 'days' => 7],
+            'last_month' => ['label' => 'Last month', 'days' => 30],
+            'last_6_months' => ['label' => 'Last 6 months', 'days' => 182],
+            'last_year' => ['label' => 'Last year', 'days' => 365],
+        ];
+
+        $result = [];
+
+        foreach ($windows as $key => $window) {
+            $start = $windowEnd->copy()->subDays($window['days'] - 1)->startOfDay();
+            $windowFacts = $this->buildWindowFacts($facts, $start, $windowEnd);
+            $windowMetrics = $this->scoreCalculator->calculate($windowFacts);
+            $windowBuckets = $windowFacts['weekly_buckets'] ?? [];
+            $result[$key] = [
+                'label' => $window['label'],
+                'days' => $window['days'],
+                'score' => $windowMetrics['overall_score'],
+                'confidence' => $windowMetrics['confidence'],
+                'active_days' => $windowFacts['active_days'],
+                'commits' => $windowFacts['commits_count'],
+                'pull_requests' => $windowFacts['pull_requests_count'],
+                'issues' => $windowFacts['issues_count'],
+                'repos_touched' => $windowFacts['repos_touched'],
+                'momentum' => $this->weeklyTimelineBuilder->momentumLabel($windowBuckets),
+            ];
+        }
+
+        return $result;
+    }
+
+    private function buildSuggestedRepositories(array $facts, string $githubUsername, ?string $token): array
+    {
+        $languages = collect($facts['language_shares'] ?? [])->sortDesc()->keys()->take(2)->values()->all();
+        $suggestions = collect();
+
+        foreach ($languages as $language) {
+            $query = sprintf('language:%s archived:false stars:>100', $language);
+            try {
+                $results = $this->github->searchRepositories($query, $token, 'updated', 'desc', 4);
+            } catch (\Throwable) {
+                continue;
+            }
+
+            foreach ($results as $repository) {
+                $fullName = (string) ($repository['full_name'] ?? '');
+
+                if ($fullName === '' || str_starts_with(strtolower($fullName), strtolower($githubUsername).'/')) {
+                    continue;
+                }
+
+                $suggestions->push([
+                    'repo' => $fullName,
+                    'url' => $repository['html_url'] ?? null,
+                    'language' => $repository['language'] ?? ucfirst($language),
+                    'description' => $repository['description'] ?? null,
+                    'stars' => (int) ($repository['stargazers_count'] ?? 0),
+                    'why_fit' => sprintf('Matches the visible %s-heavy part of your current profile.', ucfirst((string) ($repository['language'] ?? $language))),
+                    'realistic_contribution' => 'Start with a small issue, docs improvement, test, or bug fix that is easy to review.',
+                ]);
+            }
+        }
+
+        return $suggestions
+            ->unique('repo')
+            ->sortByDesc('stars')
+            ->take(5)
+            ->values()
+            ->all();
     }
 
     private function mergeWeeklyPlanEnhancement(array $weeklyPlan, array $weeklyPlanNotes): array
@@ -619,6 +1044,18 @@ class GrowthAnalysisService
                 return $item;
             }
 
+            $item['ai_note'] = $note['ai_note'] ?? null;
+
+            return $item;
+        })->all();
+    }
+
+    private function mergeThirtyDayPlanEnhancement(array $thirtyDayPlan, array $thirtyDayPlanNotes): array
+    {
+        $notesByIndex = collect($thirtyDayPlanNotes)->keyBy('index');
+
+        return collect($thirtyDayPlan)->values()->map(function (array $item, int $index) use ($notesByIndex): array {
+            $note = $notesByIndex->get($index);
             $item['ai_note'] = $note['ai_note'] ?? null;
 
             return $item;
@@ -696,5 +1133,10 @@ class GrowthAnalysisService
     private function languageBreadth(array $shares): float
     {
         return round(max(0.0, min(100.0, count(array_filter($shares, static fn ($share) => $share > 0)) * 16)), 2);
+    }
+
+    private function confidenceLabel(float $score): string
+    {
+        return $score >= 75 ? 'High' : ($score >= 45 ? 'Medium' : 'Low');
     }
 }
