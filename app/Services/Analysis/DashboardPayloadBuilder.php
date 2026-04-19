@@ -8,6 +8,8 @@ use Illuminate\Support\Collection;
 
 class DashboardPayloadBuilder
 {
+    private const SCORE_SCALE = 10;
+
     public function summary(AnalysisRun $run): array
     {
         $snapshot = $run->metricSnapshot;
@@ -18,10 +20,10 @@ class DashboardPayloadBuilder
                 [
                     'key' => 'growth-score',
                     'title' => 'Growth score',
-                    'value' => (string) round((float) $run->overall_score),
+                    'value' => $this->formatScore((float) $run->overall_score).'/10',
                     'delta' => ucfirst((string) $run->momentum_label),
                     'tone' => 'blue',
-                    'description' => 'Weighted score across consistency, diversity, and contribution.',
+                    'description' => 'Weighted score across consistency, diversity, and contribution on a 10-point scale.',
                     'icon' => 'DataLine',
                 ],
                 [
@@ -111,9 +113,9 @@ class DashboardPayloadBuilder
         ));
 
         return [
-            'current' => round($current, 1).'/100',
-            'projected' => round($projected, 1).'/100',
-            'uplift' => sprintf('%+.1f', round($projected - $current, 1)),
+            'current' => $this->formatScore($current).'/10',
+            'projected' => $this->formatScore($projected).'/10',
+            'uplift' => sprintf('%+.1f', round(($projected - $current) / self::SCORE_SCALE, 1)),
             'confidence' => $this->confidenceLabel((float) $run->confidence).' confidence',
             'notes' => [
                 'Projection assumes one extra PR per week and one additional testing signal.',
@@ -121,10 +123,10 @@ class DashboardPayloadBuilder
                 'Use the dedicated simulation endpoint for custom scenario planning.',
             ],
             'series' => [
-                ['label' => 'Current', 'value' => round($current, 1)],
-                ['label' => 'Consistency+', 'value' => round(min(100, $current + 2.4), 1)],
-                ['label' => 'Contribution+', 'value' => round(min(100, $current + 4.2), 1)],
-                ['label' => 'Projected', 'value' => round($projected, 1)],
+                ['label' => 'Current', 'value' => (float) $this->formatScore($current)],
+                ['label' => 'Consistency+', 'value' => (float) $this->formatScore(min(100, $current + 2.4))],
+                ['label' => 'Contribution+', 'value' => (float) $this->formatScore(min(100, $current + 4.2))],
+                ['label' => 'Projected', 'value' => (float) $this->formatScore($projected)],
             ],
         ];
     }
@@ -143,6 +145,7 @@ class DashboardPayloadBuilder
         }
 
         return [
+            'analysisRunId' => $run->id,
             'profile' => [
                 'username' => $run->github_username,
                 'displayName' => $profile['name'] ?: str($run->github_username)->replace(['-', '_'], ' ')->title()->toString(),
@@ -155,26 +158,36 @@ class DashboardPayloadBuilder
             ],
             'summary' => array_values(array_filter([
                 $run->summary,
-                $run->evidence_summary,
                 $run->ai_enhancement['summary'] ?? null,
             ])),
+            'evidenceSummary' => $run->evidence_summary,
+            'weeklyPlan' => collect($run->weekly_plan ?? [])->map(function (array $item) use ($run): array {
+                $notes = collect($run->ai_enhancement['merged_weekly_plan'] ?? []);
+                $aiNote = $notes->firstWhere('day', $item['day'])['ai_note']
+                    ?? $notes->firstWhere('title', $item['title'])['ai_note']
+                    ?? null;
+
+                return [
+                    'day' => $item['day'] ?? null,
+                    'title' => $item['title'] ?? null,
+                    'action' => $item['action'] ?? null,
+                    'aiNote' => $aiNote,
+                ];
+            })->values()->all(),
             'connection' => [
                 'enabled' => $connection !== null,
                 'connected' => $connection !== null && filled($connection->access_token),
                 'workspace' => $connection !== null
-                    ? sprintf('Private workspace connected for %s', $run->github_username)
-                    : 'Private workspace disabled',
-                'tokenPreview' => $connection !== null && filled($connection->access_token)
-                    ? $this->maskToken((string) $connection->access_token)
-                    : 'Not connected',
+                    ? sprintf('GitHub is connected for %s', $run->github_username)
+                    : 'GitHub is not connected',
                 'note' => $connection !== null && filled($connection->access_token)
                     ? 'Private repositories are included in the most recent synced analysis.'
-                    : 'Add a token-backed connection to include authorized private repositories.',
+                    : 'Connect GitHub to include any repositories you authorize beyond the public baseline.',
             ],
             'scoreBreakdown' => [
                 'categories' => $scoreBreakdown->pluck('label')->all(),
-                'values' => $scoreBreakdown->pluck('value')->map(fn ($value) => round((float) $value))->all(),
-                'benchmark' => $scoreBreakdown->map(fn (array $item) => round((float) $item['value'] * 0.85))->all(),
+                'values' => $scoreBreakdown->pluck('value')->map(fn ($value) => (float) $this->formatScore((float) $value))->all(),
+                'benchmark' => $scoreBreakdown->map(fn (array $item) => (float) $this->formatScore((float) $item['value'] * 0.85))->all(),
             ],
             'skillDistribution' => [
                 'categories' => $run->skillSignals->pluck('skill_key')->map(fn ($skill) => str($skill)->replace('_', ' ')->title()->toString())->all(),
@@ -188,9 +201,11 @@ class DashboardPayloadBuilder
                 'detail' => $item->body,
                 'impact' => ucfirst((string) ($item->metadata['confidence'] ?? 'Medium')),
                 'priority' => $item->category,
+                'why' => $item->metadata['why'] ?? null,
+                'evidence' => $item->metadata['evidence'] ?? null,
             ])->values()->all(),
             'source' => $run->analysis_mode === 'public_private' ? 'mixed' : 'live',
-            'privateStatus' => $run->analysis_mode === 'public_private' ? 'ready' : 'idle',
+            'lastAnalyzedAt' => optional($run->completed_at)->toIso8601String(),
         ];
     }
 
@@ -200,7 +215,7 @@ class DashboardPayloadBuilder
             'id' => $item['key'] ?? "insight-{$index}",
             'title' => $item['title'] ?? 'Insight',
             'detail' => $item['evidence'] ?? '',
-            'impact' => sprintf('Score %.0f', (float) ($item['score'] ?? 0)),
+            'impact' => $this->scoreImpactLabel((float) ($item['score'] ?? 0)),
             'priority' => ((float) ($item['score'] ?? 0)) >= 70 ? 'high' : 'medium',
         ])->all();
     }
@@ -221,10 +236,14 @@ class DashboardPayloadBuilder
         return $score >= 75 ? 'High' : ($score >= 45 ? 'Medium' : 'Low');
     }
 
-    private function maskToken(string $token): string
+    private function formatScore(float $value): string
     {
-        return strlen($token) <= 8
-            ? 'Connected'
-            : substr($token, 0, 4).'…'.substr($token, -4);
+        return number_format(max(0, min(self::SCORE_SCALE, $value / self::SCORE_SCALE)), 1);
     }
+
+    private function scoreImpactLabel(float $score): string
+    {
+        return $this->formatScore($score).'/10';
+    }
+
 }

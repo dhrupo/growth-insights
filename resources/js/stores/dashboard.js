@@ -1,25 +1,10 @@
 import { defineStore } from 'pinia';
 
-import { dashboardFallback } from '@/data/dashboardFallback';
 import { dashboardApi } from '@/services/dashboardApi';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
-const fallbackAnalysis = () => clone(dashboardFallback.analysis);
-
 const normalizeUsername = (value) => value.trim().replace(/^@+/, '');
-
-const maskToken = (value) => {
-    if (!value) {
-        return 'Not connected';
-    }
-
-    if (value.length <= 8) {
-        return 'Connected';
-    }
-
-    return `${value.slice(0, 4)}…${value.slice(-4)}`;
-};
 
 const humanizeUsername = (value) =>
     value
@@ -31,6 +16,7 @@ const humanizeUsername = (value) =>
 const mergeAnalysisResponse = (baseAnalysis, payload, username) => {
     const analysis = clone(baseAnalysis);
 
+    analysis.analysisRunId = payload?.analysisRunId ?? analysis.analysisRunId ?? null;
     analysis.username = username;
     analysis.profile.username = username;
     analysis.profile.displayName = payload?.profile?.displayName
@@ -47,11 +33,12 @@ const mergeAnalysisResponse = (baseAnalysis, payload, username) => {
     analysis.summary = Array.isArray(payload?.summary) && payload.summary.length
         ? payload.summary
         : analysis.summary;
+    analysis.evidenceSummary = payload?.evidenceSummary ?? analysis.evidenceSummary ?? null;
+    analysis.weeklyPlan = Array.isArray(payload?.weeklyPlan) ? payload.weeklyPlan : (analysis.weeklyPlan ?? []);
     analysis.connection = payload?.connection
         ? {
             ...analysis.connection,
             ...payload.connection,
-            tokenPreview: payload.connection.tokenPreview ?? analysis.connection.tokenPreview,
         }
         : analysis.connection;
     analysis.scoreBreakdown = payload?.scoreBreakdown ?? analysis.scoreBreakdown;
@@ -67,8 +54,7 @@ const mergeAnalysisResponse = (baseAnalysis, payload, username) => {
         : analysis.recommendations;
     analysis.source = payload?.source ?? analysis.source;
     analysis.status = 'ready';
-    analysis.privateStatus = payload?.privateStatus ?? analysis.privateStatus;
-    analysis.lastAnalyzedAt = new Date().toISOString();
+    analysis.lastAnalyzedAt = payload?.lastAnalyzedAt ?? new Date().toISOString();
     analysis.error = null;
 
     return analysis;
@@ -81,13 +67,75 @@ const defaultFilters = () => ({
     mode: 'simple',
 });
 
+const emptySummary = () => [];
+
+const emptyTimeline = () => ({
+    categories: [],
+    series: [],
+    updatedAt: null,
+});
+
+const emptyAcquisitionMix = () => ({
+    categories: [],
+    values: [],
+});
+
+const emptySimulator = () => ({
+    current: null,
+    projected: null,
+    uplift: null,
+    confidence: null,
+    notes: [],
+    series: [],
+});
+
+const emptyAnalysis = () => ({
+    analysisRunId: null,
+    username: '',
+    source: 'empty',
+    status: 'idle',
+    lastAnalyzedAt: null,
+    evidenceSummary: null,
+    weeklyPlan: [],
+    profile: {
+        username: '',
+        displayName: '',
+        role: '',
+        bio: '',
+        followers: 0,
+        publicRepos: 0,
+        contributionStreak: 0,
+        publicPullRequests: 0,
+    },
+    summary: [],
+    connection: {
+        enabled: false,
+        connected: false,
+        workspace: 'GitHub is not connected',
+        note: 'Connect GitHub to include any private repositories you authorize.',
+    },
+    scoreBreakdown: {
+        categories: [],
+        values: [],
+        benchmark: [],
+    },
+    skillDistribution: {
+        categories: [],
+        values: [],
+    },
+    strengths: [],
+    weaknesses: [],
+    recommendations: [],
+    error: null,
+});
+
 const defaultSliceState = (value) => clone(value);
 
 const sliceDefinitions = [
     {
         key: 'summary',
         fetch: dashboardApi.fetchSummary,
-        fallback: dashboardFallback.summary,
+        fallback: emptySummary(),
         apply(state, value) {
             state.summary = clone(value);
         },
@@ -114,7 +162,7 @@ const sliceDefinitions = [
     {
         key: 'timeline',
         fetch: dashboardApi.fetchTimeline,
-        fallback: dashboardFallback.timeline,
+        fallback: emptyTimeline(),
         apply(state, value) {
             state.timeline = clone(value);
         },
@@ -146,10 +194,10 @@ const sliceDefinitions = [
         key: 'insights',
         fetch: dashboardApi.fetchInsights,
         fallback: {
-            acquisitionMix: dashboardFallback.acquisitionMix,
-            strengths: dashboardFallback.strengths,
-            weaknesses: dashboardFallback.weaknesses,
-            recommendations: dashboardFallback.recommendations,
+            acquisitionMix: emptyAcquisitionMix(),
+            strengths: [],
+            weaknesses: [],
+            recommendations: [],
         },
         apply(state, value) {
             if (value.acquisitionMix) {
@@ -184,7 +232,7 @@ const sliceDefinitions = [
     {
         key: 'simulator',
         fetch: dashboardApi.fetchSimulator,
-        fallback: dashboardFallback.simulator,
+        fallback: emptySimulator(),
         apply(state, value) {
             state.simulator = clone(value);
         },
@@ -211,29 +259,28 @@ export const useDashboardStore = defineStore('dashboard', {
     state: () => ({
         filters: defaultFilters(),
         status: 'idle',
-        dataSource: 'seed',
+        dataSource: 'empty',
         error: null,
         lastSyncedAt: null,
-        analysis: fallbackAnalysis(),
+        analysis: emptyAnalysis(),
         analysisStatus: 'idle',
-        analysisConnectionStatus: 'idle',
         analysisError: null,
-        analysisConnectionError: null,
-        summary: defaultSliceState(dashboardFallback.summary),
-        timeline: defaultSliceState(dashboardFallback.timeline),
-        acquisitionMix: defaultSliceState(dashboardFallback.acquisitionMix),
-        strengths: defaultSliceState(dashboardFallback.strengths),
-        weaknesses: defaultSliceState(dashboardFallback.weaknesses),
-        recommendations: defaultSliceState(dashboardFallback.recommendations),
-        simulator: defaultSliceState(dashboardFallback.simulator),
+        summary: defaultSliceState(emptySummary()),
+        timeline: defaultSliceState(emptyTimeline()),
+        acquisitionMix: defaultSliceState(emptyAcquisitionMix()),
+        strengths: [],
+        weaknesses: [],
+        recommendations: [],
+        simulator: defaultSliceState(emptySimulator()),
     }),
     getters: {
         isLoading: (state) => state.status === 'loading',
         isRefreshing: (state) => state.status === 'refreshing',
         hasLiveData: (state) => state.dataSource === 'live' || state.dataSource === 'mixed',
+        hasAnalysisRun: (state) => Boolean(state.analysis?.analysisRunId),
         syncLabel: (state) => {
             if (!state.lastSyncedAt) {
-                return 'Seed data';
+                return 'Not analyzed yet';
             }
 
             return new Intl.DateTimeFormat(undefined, {
@@ -243,6 +290,29 @@ export const useDashboardStore = defineStore('dashboard', {
         },
     },
     actions: {
+        resetAnalysisState(username = '') {
+            this.analysis = {
+                ...emptyAnalysis(),
+                username,
+                profile: {
+                    ...emptyAnalysis().profile,
+                    username,
+                },
+            };
+            this.summary = [];
+            this.timeline = emptyTimeline();
+            this.acquisitionMix = emptyAcquisitionMix();
+            this.strengths = [];
+            this.weaknesses = [];
+            this.recommendations = [];
+            this.simulator = emptySimulator();
+            this.dataSource = 'empty';
+            this.status = 'idle';
+            this.lastSyncedAt = null;
+            this.error = null;
+            this.analysisStatus = 'idle';
+            this.analysisError = null;
+        },
         setFilters(patch = {}) {
             Object.assign(this.filters, patch);
         },
@@ -257,7 +327,24 @@ export const useDashboardStore = defineStore('dashboard', {
             this.status = this.lastSyncedAt ? 'refreshing' : 'loading';
             this.error = null;
 
+            if (!this.analysis?.analysisRunId) {
+                this.summary = [];
+                this.timeline = emptyTimeline();
+                this.acquisitionMix = emptyAcquisitionMix();
+                this.strengths = [];
+                this.weaknesses = [];
+                this.recommendations = [];
+                this.simulator = emptySimulator();
+                this.dataSource = 'empty';
+                this.status = 'ready';
+                this.lastSyncedAt = null;
+                this.error = null;
+
+                return this;
+            }
+
             const query = {
+                analysis_run_id: this.analysis.analysisRunId,
                 range: nextFilters.range,
                 segment: nextFilters.segment,
                 query: nextFilters.query,
@@ -268,7 +355,7 @@ export const useDashboardStore = defineStore('dashboard', {
             const settled = await Promise.allSettled(
                 sliceDefinitions.map(async (slice) => {
                     const response = await slice.fetch(query);
-                    const normalized = slice.normalize(response);
+                    const normalized = slice.normalize(response?.data ?? null);
 
                     return {
                         key: slice.key,
@@ -302,12 +389,12 @@ export const useDashboardStore = defineStore('dashboard', {
                 ? 'live'
                 : liveSlices > 0
                     ? 'mixed'
-                    : 'seed';
+                    : 'empty';
 
             this.status = 'ready';
             this.lastSyncedAt = new Date().toISOString();
             this.error = liveSlices === 0
-                ? 'Dashboard data is using the local fallback seed until the API is ready.'
+                ? 'No dashboard slices were returned for the selected analysis yet.'
                 : null;
 
             return this;
@@ -332,19 +419,23 @@ export const useDashboardStore = defineStore('dashboard', {
                 range: range ?? this.filters.range,
                 segment: segment ?? this.filters.segment,
             });
+            const responsePayload = payload?.data ?? null;
+            const responseError = payload?.error ?? null;
 
             const nextAnalysis = mergeAnalysisResponse(
-                dashboardFallback.analysis,
-                payload,
+                emptyAnalysis(),
+                responsePayload,
                 normalizedUsername,
             );
 
-            if (!payload) {
-                nextAnalysis.source = 'seed';
-                nextAnalysis.summary = dashboardFallback.analysis.summary;
+            if (!responsePayload) {
+                nextAnalysis.source = 'empty';
+                nextAnalysis.summary = [];
+                nextAnalysis.evidenceSummary = null;
+                nextAnalysis.weeklyPlan = [];
                 nextAnalysis.connection = {
-                    ...dashboardFallback.analysis.connection,
-                    note: 'Seed data is showing until the public analysis API is available.',
+                    ...emptyAnalysis().connection,
+                    note: 'Run a public analysis to populate this profile.',
                 };
             } else {
                 nextAnalysis.source = 'live';
@@ -352,72 +443,46 @@ export const useDashboardStore = defineStore('dashboard', {
 
             this.analysis = nextAnalysis;
             this.analysisStatus = 'ready';
-            this.dataSource = payload ? 'live' : 'seed';
-            this.analysisError = null;
+            this.dataSource = responsePayload ? 'live' : 'empty';
+            this.analysisError = responseError?.message ?? null;
 
-            if (payload) {
+            if (responsePayload) {
                 await this.fetchDashboardData();
             }
 
             return this.analysis;
         },
-        async connectPrivateWorkspace({ username, token } = {}) {
+        async loadLatestAnalysis(username) {
             const normalizedUsername = normalizeUsername(username || this.analysis.username || '');
-            const connectionToken = token?.trim() || '';
 
             if (!normalizedUsername) {
-                this.analysisConnectionStatus = 'error';
-                this.analysisConnectionError = 'Enter a GitHub username before connecting a private workspace.';
                 return null;
             }
 
-            if (connectionToken.length < 8) {
-                this.analysisConnectionStatus = 'error';
-                this.analysisConnectionError = 'Token-backed private analysis needs a token of at least 8 characters.';
+            this.analysisStatus = 'loading';
+            this.analysisError = null;
+
+            const payload = await dashboardApi.fetchLatestAnalysis(normalizedUsername);
+            const responsePayload = payload?.data ?? null;
+            const responseError = payload?.error ?? null;
+
+            if (!responsePayload) {
+                this.analysisStatus = 'idle';
+                this.analysisError = responseError?.status && responseError.status !== 404
+                    ? responseError.message
+                    : null;
                 return null;
             }
 
-            this.analysisConnectionStatus = 'loading';
-            this.analysisConnectionError = null;
-
-            const payload = await dashboardApi.connectPrivateAnalysis({
-                username: normalizedUsername,
-                token: connectionToken,
-            });
-
-            const nextAnalysis = mergeAnalysisResponse(
-                this.analysis,
-                payload,
+            this.analysis = mergeAnalysisResponse(
+                emptyAnalysis(),
+                responsePayload,
                 normalizedUsername,
             );
-
-            nextAnalysis.privateStatus = 'ready';
-            nextAnalysis.connection = {
-                enabled: true,
-                connected: true,
-                workspace: payload?.connection?.workspace
-                    ?? `Private workspace connected for ${normalizedUsername}`,
-                tokenPreview: maskToken(connectionToken),
-                note: payload?.connection?.note
-                    ?? 'Private repository context will be folded into the next analysis run.',
-            };
-
-            if (!payload) {
-                nextAnalysis.source = this.analysis.source === 'live' ? 'mixed' : 'seed';
-                nextAnalysis.connection.note = 'Private workspace connection is prepared locally until the API is ready.';
-            } else if (this.analysis.source === 'live') {
-                nextAnalysis.source = 'live';
-            } else {
-                nextAnalysis.source = 'mixed';
-            }
-
-            this.analysis = nextAnalysis;
-            this.analysisConnectionStatus = 'ready';
-            this.analysisConnectionError = null;
-
-            if (payload) {
-                await this.fetchDashboardData();
-            }
+            this.analysisStatus = 'ready';
+            this.dataSource = responsePayload.source === 'mixed' ? 'mixed' : 'live';
+            this.analysisError = null;
+            await this.fetchDashboardData();
 
             return this.analysis;
         },

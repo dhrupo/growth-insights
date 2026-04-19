@@ -6,7 +6,7 @@ const buildSkillRadarOption = (analysis) => {
     const values = analysis.skillDistribution?.values ?? [];
     const benchmark = analysis.scoreBreakdown?.benchmark ?? [];
     const indicatorValues = values.length ? values : [0];
-    const maxValue = Math.max(100, ...indicatorValues, ...(benchmark.length ? benchmark : [0]));
+    const maxValue = Math.max(120, ...indicatorValues, ...(benchmark.length ? benchmark : [0]));
 
     return {
         color: ['#2563eb', '#0f766e'],
@@ -15,24 +15,37 @@ const buildSkillRadarOption = (analysis) => {
         },
         legend: {
             bottom: 0,
+            textStyle: {
+                color: '#475569',
+            },
         },
         radar: {
+            radius: '72%',
             indicator: (analysis.skillDistribution?.categories ?? ['Analysis']).map((name, index) => ({
                 name,
-                max: Math.max(20, Math.ceil((indicatorValues[index] ?? 0) * 1.2), Math.ceil(maxValue)),
+                max: Math.max(24, Math.ceil((indicatorValues[index] ?? 0) * 1.2), Math.ceil(maxValue)),
             })),
-            splitNumber: 4,
+            splitNumber: 5,
             axisName: {
                 color: '#334155',
+                fontSize: 12,
+                fontWeight: 500,
+            },
+            axisLine: {
+                lineStyle: {
+                    color: 'rgba(148, 163, 184, 0.35)',
+                    width: 1,
+                },
             },
             splitLine: {
                 lineStyle: {
-                    color: '#e2e8f0',
+                    color: 'rgba(203, 213, 225, 0.7)',
+                    width: 1,
                 },
             },
             splitArea: {
                 areaStyle: {
-                    color: ['rgba(248,250,252,0.9)', 'rgba(241,245,249,0.9)'],
+                    color: ['rgba(248,250,252,0.96)', 'rgba(241,245,249,0.88)'],
                 },
             },
         },
@@ -45,15 +58,26 @@ const buildSkillRadarOption = (analysis) => {
                     {
                         value: values,
                         name: 'Current profile',
+                        symbolSize: 6,
+                        lineStyle: {
+                            color: '#2563eb',
+                            width: 2,
+                        },
                         areaStyle: {
-                            opacity: 0.18,
+                            color: 'rgba(37, 99, 235, 0.16)',
                         },
                     },
                     {
                         value: benchmark.length ? benchmark : values,
                         name: 'Benchmark',
+                        symbolSize: 4,
+                        lineStyle: {
+                            color: 'rgba(15, 118, 110, 0.6)',
+                            width: 1.5,
+                            type: 'dashed',
+                        },
                         areaStyle: {
-                            opacity: 0.08,
+                            color: 'rgba(15, 118, 110, 0.05)',
                         },
                     },
                 ],
@@ -69,17 +93,10 @@ export function useGrowthAnalysisWorkbench() {
         username: store.analysis.username,
     });
 
-    const privateForm = reactive({
-        username: store.analysis.username,
-        token: '',
-        enabled: false,
-    });
-
     watch(
         () => store.analysis.username,
         (username) => {
             publicForm.username = username;
-            privateForm.username = username;
         },
         { immediate: true },
     );
@@ -88,21 +105,10 @@ export function useGrowthAnalysisWorkbench() {
     const analysisProfile = computed(() => store.analysis.profile);
     const analysisConnection = computed(() => store.analysis.connection);
     const analysisSummary = computed(() => store.analysis.summary);
-    const analysisSourceLabel = computed(() => {
-        if (analysis.value.source === 'live') {
-            return 'Live API';
-        }
-
-        if (analysis.value.source === 'mixed') {
-            return 'Mixed source';
-        }
-
-        return 'Seed preview';
-    });
     const analysisNotice = computed(() =>
-        analysis.value.source === 'live'
-            ? 'Connected to live API payloads.'
-            : 'Showing a local preview until the backend analysis endpoints are ready.',
+        analysis.value.analysisRunId
+            ? 'Showing the latest completed analysis for this username.'
+            : 'Public analysis has not been completed for this username yet.',
     );
     const analysisUpdatedLabel = computed(() => {
         const value = analysis.value.lastAnalyzedAt;
@@ -125,9 +131,7 @@ export function useGrowthAnalysisWorkbench() {
         }).format(new Date(parsed));
     });
     const publicLoading = computed(() => store.analysisStatus === 'loading');
-    const privateLoading = computed(() => store.analysisConnectionStatus === 'loading');
     const publicError = computed(() => store.analysisError);
-    const privateError = computed(() => store.analysisConnectionError);
     const skillRadarOption = computed(() => buildSkillRadarOption(store.analysis));
 
     const runPublicAnalysis = async () => {
@@ -138,30 +142,18 @@ export function useGrowthAnalysisWorkbench() {
         });
     };
 
-    const connectPrivateWorkspace = async () => {
-        await store.connectPrivateWorkspace({
-            username: privateForm.username || publicForm.username,
-            token: privateForm.token,
-        });
-    };
-
     return {
         store,
         analysis,
         analysisProfile,
         analysisConnection,
         analysisSummary,
-        analysisSourceLabel,
         analysisNotice,
         analysisUpdatedLabel,
         publicForm,
-        privateForm,
         publicLoading,
-        privateLoading,
         publicError,
-        privateError,
         skillRadarOption,
         runPublicAnalysis,
-        connectPrivateWorkspace,
     };
 }

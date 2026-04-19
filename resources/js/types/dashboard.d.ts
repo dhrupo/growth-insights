@@ -1,6 +1,6 @@
 export type DashboardMode = 'simple' | 'advanced';
 
-export type DashboardDataSource = 'seed' | 'mixed' | 'live';
+export type DashboardDataSource = 'empty' | 'mixed' | 'live';
 
 export type DashboardAnalysisStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -39,6 +39,15 @@ export interface DashboardInsightItem {
     detail: string;
     impact?: string;
     priority?: 'low' | 'medium' | 'high';
+    why?: string | null;
+    evidence?: unknown;
+}
+
+export interface DashboardWeeklyPlanItem {
+    day: string;
+    title: string;
+    action: string;
+    aiNote?: string | null;
 }
 
 export interface DashboardSimulatorSeriesPoint {
@@ -70,7 +79,6 @@ export interface GithubAnalysisConnection {
     enabled: boolean;
     connected: boolean;
     workspace: string;
-    tokenPreview: string;
     note: string;
 }
 
@@ -86,11 +94,13 @@ export interface GithubSkillDistribution {
 }
 
 export interface GithubAnalysisWorkbench {
+    analysisRunId?: number | null;
     username: string;
     source: DashboardDataSource;
     status: DashboardAnalysisStatus;
-    privateStatus: DashboardAnalysisStatus;
     lastAnalyzedAt?: string | null;
+    evidenceSummary?: string | null;
+    weeklyPlan?: DashboardWeeklyPlanItem[];
     profile: GithubAnalysisProfile;
     summary: string[];
     connection: GithubAnalysisConnection;

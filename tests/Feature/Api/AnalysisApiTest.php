@@ -174,7 +174,7 @@ class AnalysisApiTest extends TestCase
             ]);
     }
 
-    public function test_dashboard_workbench_endpoints_return_analysis_payload_for_public_and_private_flows(): void
+    public function test_dashboard_workbench_endpoints_return_analysis_payload_for_public_and_connected_flows(): void
     {
         Http::fake($this->analysisHttpFake($this->publicGitHubFake(), $this->geminiFakeResponse()));
 
@@ -197,12 +197,22 @@ class AnalysisApiTest extends TestCase
 
         Http::fake($this->analysisHttpFake($this->privateGitHubFake(), $this->geminiFakeResponse()));
 
-        $this->postJson('/api/dashboard/github/private-connection', [
-            'username' => 'octocat',
-            'token' => 'ghp_test_private_token_value',
-        ])->assertOk()
+        $connection = GitHubConnection::create([
+            'user_id' => null,
+            'github_username' => 'octocat',
+            'analysis_mode' => 'public_private',
+            'access_token' => 'ghp_test_private_token_value',
+            'sync_status' => 'idle',
+            'connected_at' => now(),
+        ]);
+
+        $this->postJson("/api/github/connections/{$connection->id}/sync")
+            ->assertOk();
+
+        $this->getJson('/api/dashboard/github/latest-analysis/octocat')
+            ->assertOk()
             ->assertJsonPath('data.connection.connected', true)
-            ->assertJsonPath('data.privateStatus', 'ready');
+            ->assertJsonPath('data.source', 'mixed');
     }
 
     private function geminiFakeResponse(): array

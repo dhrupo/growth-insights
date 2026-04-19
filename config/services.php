@@ -30,6 +30,9 @@ return [
 
     'github' => [
         'token' => env('GITHUB_TOKEN'),
+        'client_id' => env('GITHUB_CLIENT_ID'),
+        'client_secret' => env('GITHUB_CLIENT_SECRET'),
+        'redirect_uri' => env('GITHUB_REDIRECT_URI'),
         'base_uri' => env('GITHUB_BASE_URI', 'https://api.github.com'),
     ],
 

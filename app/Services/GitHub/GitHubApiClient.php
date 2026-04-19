@@ -75,6 +75,24 @@ class GitHubApiClient
         );
     }
 
+    public function authorPullRequests(string $githubUsername, CarbonInterface $since, ?string $token = null): array
+    {
+        $items = $this->searchIssues(
+            sprintf('author:%s type:pr created:>=%s', $githubUsername, $since->toDateString()),
+            $token,
+        );
+
+        return array_values(array_filter($items, static fn (array $item): bool => (bool) ($item['pull_request'] ?? false)));
+    }
+
+    public function authorIssues(string $githubUsername, CarbonInterface $since, ?string $token = null): array
+    {
+        return $this->searchIssues(
+            sprintf('author:%s type:issue created:>=%s', $githubUsername, $since->toDateString()),
+            $token,
+        );
+    }
+
     public function searchIssues(string $query, ?string $token = null): array
     {
         $response = $this->pending($token)->get('/search/issues', [
@@ -121,9 +139,13 @@ class GitHubApiClient
 
     private function pending(?string $token = null): PendingRequest
     {
+        $token = $token ?: config('services.github.token');
+
         $request = $this->http
             ->baseUrl(config('services.github.base_uri'))
             ->acceptJson()
+            ->timeout(15)
+            ->connectTimeout(8)
             ->withHeaders([
                 'User-Agent' => 'GrowthInsights/1.0',
                 'X-GitHub-Api-Version' => '2022-11-28',

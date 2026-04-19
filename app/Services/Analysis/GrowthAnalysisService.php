@@ -69,6 +69,16 @@ class GrowthAnalysisService
             ->first();
     }
 
+    public function connectionForUsername(string $githubUsername): ?GitHubConnection
+    {
+        return GitHubConnection::query()
+            ->where('github_username', $githubUsername)
+            ->latest('last_synced_at')
+            ->latest('connected_at')
+            ->latest('id')
+            ->first();
+    }
+
     private function analyze(string $githubUsername, ?string $token, ?GitHubConnection $connection, string $analysisMode): AnalysisRun
     {
         $windowDays = 56;
@@ -82,7 +92,7 @@ class GrowthAnalysisService
         $repos = collect($repos)
             ->filter(static fn (array $repo): bool => ! (bool) ($repo['archived'] ?? false))
             ->sortByDesc(static fn (array $repo): string => (string) ($repo['updated_at'] ?? ''))
-            ->take(12)
+            ->take(6)
             ->values();
 
         $facts = $this->buildFacts(
@@ -267,6 +277,8 @@ class GrowthAnalysisService
         $issueCount = 0;
         $activeDays = [];
         $eventTypeDays = [];
+        $globalPullRequests = $this->github->authorPullRequests($githubUsername, $windowStart, $token);
+        $globalIssues = $this->github->authorIssues($githubUsername, $windowStart, $token);
 
         foreach ($repositories as $repository) {
             $fullName = $repository['full_name'] ?? null;
@@ -303,54 +315,62 @@ class GrowthAnalysisService
                     'message' => (string) data_get($commit, 'commit.message', ''),
                 ];
             }
+        }
 
-            $pullRequests = $this->github->repositoryPullRequests($fullName, $githubUsername, $windowStart, $token);
-            foreach ($pullRequests as $pullRequest) {
-                $date = data_get($pullRequest, 'created_at');
+        foreach ($globalPullRequests as $pullRequest) {
+            $date = data_get($pullRequest, 'created_at');
 
-                if (! $date) {
-                    continue;
-                }
-
-                $pullRequestCount++;
-                $reposTouched[$fullName] = true;
-                $dateString = Carbon::parse($date)->toDateString();
-                $activeDays[$dateString] = true;
-                $eventTypeDays['pull_request'][$dateString] = true;
-                $pullRequestTitles[] = (string) data_get($pullRequest, 'title', '');
-                $events[] = [
-                    'type' => 'pull_request',
-                    'date' => $dateString,
-                    'repo' => $fullName,
-                    'message' => (string) data_get($pullRequest, 'title', ''),
-                ];
+            if (! $date) {
+                continue;
             }
 
-            $issues = $this->github->repositoryIssues($fullName, $githubUsername, $windowStart, $token);
-            foreach ($issues as $issue) {
-                if (isset($issue['pull_request'])) {
-                    continue;
-                }
+            $repoFullName = (string) str((string) data_get($pullRequest, 'repository_url', ''))
+                ->after('/repos/');
 
-                $date = data_get($issue, 'created_at');
-
-                if (! $date) {
-                    continue;
-                }
-
-                $issueCount++;
-                $reposTouched[$fullName] = true;
-                $dateString = Carbon::parse($date)->toDateString();
-                $activeDays[$dateString] = true;
-                $eventTypeDays['issue'][$dateString] = true;
-                $issueTitles[] = (string) data_get($issue, 'title', '');
-                $events[] = [
-                    'type' => 'issue',
-                    'date' => $dateString,
-                    'repo' => $fullName,
-                    'message' => (string) data_get($issue, 'title', ''),
-                ];
+            $pullRequestCount++;
+            if ($repoFullName !== '') {
+                $reposTouched[$repoFullName] = true;
             }
+            $dateString = Carbon::parse($date)->toDateString();
+            $activeDays[$dateString] = true;
+            $eventTypeDays['pull_request'][$dateString] = true;
+            $pullRequestTitles[] = (string) data_get($pullRequest, 'title', '');
+            $events[] = [
+                'type' => 'pull_request',
+                'date' => $dateString,
+                'repo' => $repoFullName,
+                'message' => (string) data_get($pullRequest, 'title', ''),
+            ];
+        }
+
+        foreach ($globalIssues as $issue) {
+            if (isset($issue['pull_request'])) {
+                continue;
+            }
+
+            $date = data_get($issue, 'created_at');
+
+            if (! $date) {
+                continue;
+            }
+
+            $repoFullName = (string) str((string) data_get($issue, 'repository_url', ''))
+                ->after('/repos/');
+
+            $issueCount++;
+            if ($repoFullName !== '') {
+                $reposTouched[$repoFullName] = true;
+            }
+            $dateString = Carbon::parse($date)->toDateString();
+            $activeDays[$dateString] = true;
+            $eventTypeDays['issue'][$dateString] = true;
+            $issueTitles[] = (string) data_get($issue, 'title', '');
+            $events[] = [
+                'type' => 'issue',
+                'date' => $dateString,
+                'repo' => $repoFullName,
+                'message' => (string) data_get($issue, 'title', ''),
+            ];
         }
 
         $totalWeeks = max(1, Carbon::parse($windowStart)->diffInWeeks(Carbon::parse($windowEnd)) + 1);

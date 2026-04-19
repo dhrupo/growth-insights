@@ -11,8 +11,8 @@ Route::prefix('dashboard')->group(function (): void {
     Route::get('timeline', [DashboardController::class, 'timeline'])->name('dashboard.timeline');
     Route::get('insights', [DashboardController::class, 'insights'])->name('dashboard.insights');
     Route::get('simulator', [DashboardController::class, 'simulator'])->name('dashboard.simulator');
+    Route::get('github/latest-analysis/{githubUsername}', [DashboardGitHubController::class, 'latestAnalysis'])->name('dashboard.github.latest-analysis');
     Route::post('github/public-analysis', [DashboardGitHubController::class, 'publicAnalysis'])->name('dashboard.github.public-analysis');
-    Route::post('github/private-connection', [DashboardGitHubController::class, 'privateConnection'])->name('dashboard.github.private-connection');
 });
 
 Route::post('analysis/public', [AnalysisController::class, 'storePublic'])
@@ -25,9 +25,6 @@ Route::post('analysis/simulations', [AnalysisController::class, 'simulate'])
     ->name('analysis.simulations.store');
 
 Route::prefix('github')->group(function (): void {
-    Route::post('connections', [GitHubConnectionController::class, 'store'])
-        ->name('github.connections.store');
-
     Route::post('connections/{githubConnection}/sync', [GitHubConnectionController::class, 'sync'])
         ->name('github.connections.sync');
 

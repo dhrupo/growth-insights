@@ -7,7 +7,7 @@
         </p>
 
         <div class="mt-6 flex justify-center">
-            <el-button type="primary" tag="a" href="/dashboard">Back to dashboard</el-button>
+            <el-button type="primary" tag="a" href="/">Back to home</el-button>
         </div>
     </div>
 </template>

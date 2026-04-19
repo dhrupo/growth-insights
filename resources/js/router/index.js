@@ -1,64 +1,36 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
 import AppLayout from '@/layouts/AppLayout.vue';
-import { sectionRoutes } from '@/navigation';
 
 const routes = [
     {
         path: '/',
+        name: 'home',
+        component: () => import('@/pages/HomePage.vue'),
+        meta: {
+            title: 'Growth Insights',
+            description: 'Start with a GitHub username and open a full growth profile.',
+        },
+    },
+    {
+        path: '/dashboard',
+        redirect: '/',
+    },
+    {
+        path: '/dashboard/advanced',
+        redirect: '/',
+    },
+    {
+        path: '/:username',
         component: AppLayout,
         children: [
             {
                 path: '',
-                redirect: { name: 'dashboard-simple' },
-            },
-            {
-                path: 'dashboard',
-                name: 'dashboard-simple',
+                name: 'profile',
                 component: () => import('@/pages/DashboardPage.vue'),
                 meta: {
-                    title: 'Dashboard',
-                    description: 'Core KPIs, trend lines, and a fast operational read.',
-                    mode: 'simple',
-                },
-            },
-            {
-                path: 'dashboard/advanced',
-                name: 'dashboard-advanced',
-                component: () => import('@/pages/DashboardPage.vue'),
-                meta: {
-                    title: 'Dashboard',
-                    description: 'Expanded filters, secondary charts, and diagnostics.',
-                    mode: 'advanced',
-                },
-            },
-            {
-                path: 'analytics',
-                name: 'analytics',
-                component: () => import('@/pages/AnalysisWorkbenchPage.vue'),
-                meta: {
-                    title: 'Analysis Workbench',
-                    description: 'Run public and private GitHub analysis and inspect the deeper signal breakdown.',
-                },
-            },
-            {
-                path: 'reports',
-                name: 'reports',
-                component: () => import('@/pages/SectionPage.vue'),
-                props: sectionRoutes.reports,
-                meta: {
-                    title: 'Reports',
-                    description: sectionRoutes.reports.description,
-                },
-            },
-            {
-                path: 'settings',
-                name: 'settings',
-                component: () => import('@/pages/SectionPage.vue'),
-                props: sectionRoutes.settings,
-                meta: {
-                    title: 'Settings',
-                    description: sectionRoutes.settings.description,
+                    title: 'Growth Insights',
+                    description: 'Public GitHub analysis with optional private enrichment.',
                 },
             },
         ],
@@ -82,7 +54,10 @@ const router = createRouter({
 });
 
 router.afterEach((to) => {
-    const pageTitle = to.meta.title ? `${to.meta.title} | Growth Insights` : 'Growth Insights';
+    const username = typeof to.params.username === 'string' ? to.params.username : null;
+    const pageTitle = username
+        ? `@${username} | Growth Insights`
+        : (to.meta.title ? `${to.meta.title} | Growth Insights` : 'Growth Insights');
     document.title = pageTitle;
 });
 

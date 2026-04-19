@@ -1,12 +1,9 @@
-import { computed, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed } from 'vue';
 
 import { dashboardIcons } from '@/icons';
 import { useDashboardStore } from '@/stores/dashboard';
 
 const resolveIcon = (iconName) => dashboardIcons[iconName] ?? dashboardIcons.Operation;
-
-const chartColors = ['#2563eb', '#0f766e', '#f59e0b', '#ef4444'];
 
 const buildTrendOption = (timeline) => ({
     color: ['#2563eb', '#0f766e'],
@@ -15,7 +12,6 @@ const buildTrendOption = (timeline) => ({
         right: 12,
         top: 28,
         bottom: 12,
-        containLabel: true,
     },
     tooltip: {
         trigger: 'axis',
@@ -61,51 +57,6 @@ const buildTrendOption = (timeline) => ({
     })),
 });
 
-const buildSourceOption = (acquisitionMix) => ({
-    color: ['#2563eb'],
-    grid: {
-        left: 84,
-        right: 16,
-        top: 12,
-        bottom: 12,
-        containLabel: true,
-    },
-    tooltip: {
-        trigger: 'axis',
-        axisPointer: {
-            type: 'shadow',
-        },
-    },
-    xAxis: {
-        type: 'value',
-        splitLine: {
-            lineStyle: {
-                color: '#e2e8f0',
-            },
-        },
-    },
-    yAxis: {
-        type: 'category',
-        data: acquisitionMix.categories,
-        axisLine: {
-            lineStyle: {
-                color: '#cbd5e1',
-            },
-        },
-        axisTick: {
-            show: false,
-        },
-    },
-    series: [
-        {
-            type: 'bar',
-            barWidth: 16,
-            borderRadius: [0, 8, 8, 0],
-            data: acquisitionMix.values,
-        },
-    ],
-});
-
 const buildSimulatorOption = (simulator) => ({
     color: ['#2563eb'],
     grid: {
@@ -113,7 +64,6 @@ const buildSimulatorOption = (simulator) => ({
         right: 12,
         top: 24,
         bottom: 12,
-        containLabel: true,
     },
     tooltip: {
         trigger: 'axis',
@@ -157,26 +107,32 @@ const buildSimulatorOption = (simulator) => ({
 });
 
 const buildSegmentOption = (strengths, weaknesses) => ({
-    color: chartColors,
+    color: ['#16a34a', '#ef4444'],
     tooltip: {
         trigger: 'item',
     },
     legend: {
         bottom: 0,
+        textStyle: {
+            color: '#475569',
+        },
     },
     series: [
         {
             name: 'Signal balance',
             type: 'pie',
-            radius: ['52%', '76%'],
+            radius: ['56%', '78%'],
             avoidLabelOverlap: false,
             itemStyle: {
-                borderRadius: 10,
+                borderRadius: 14,
                 borderColor: '#fff',
-                borderWidth: 2,
+                borderWidth: 4,
             },
             label: {
-                show: false,
+                show: true,
+                formatter: '{b}\n{d}%',
+                color: '#0f172a',
+                fontWeight: 600,
             },
             data: [
                 { value: strengths.length || 1, name: 'Strengths' },
@@ -187,17 +143,15 @@ const buildSegmentOption = (strengths, weaknesses) => ({
 });
 
 export function useDashboardInsights() {
-    const route = useRoute();
     const store = useDashboardStore();
 
-    const mode = computed(() => route.meta.mode ?? 'simple');
-    const isAdvanced = computed(() => mode.value === 'advanced');
-
     const summaryCards = computed(() =>
-        store.summary.map((item) => ({
-            ...item,
-            icon: resolveIcon(item.icon),
-        })),
+        store.hasAnalysisRun
+            ? store.summary.map((item) => ({
+                ...item,
+                icon: resolveIcon(item.icon),
+            }))
+            : [],
     );
 
     const liveBadge = computed(() => {
@@ -205,38 +159,29 @@ export function useDashboardInsights() {
             return 'Live API ready';
         }
 
-        return store.lastSyncedAt ? 'Seed fallback' : 'Loading';
+        return store.analysisStatus === 'loading' ? 'Analyzing' : 'Waiting for analysis';
     });
 
     const trendOption = computed(() => buildTrendOption(store.timeline));
-    const sourceOption = computed(() => buildSourceOption(store.acquisitionMix));
     const segmentOption = computed(() => buildSegmentOption(store.strengths, store.weaknesses));
     const simulatorOption = computed(() => buildSimulatorOption(store.simulator));
 
     const refresh = async () => {
-        await store.fetchDashboardData({
-            mode: mode.value,
-        });
-    };
+        if (!store.hasAnalysisRun) {
+            return;
+        }
 
-    watch(
-        mode,
-        async () => {
-            await refresh();
-        },
-        { immediate: true },
-    );
+        await store.fetchDashboardData();
+    };
 
     const filters = store.filters;
 
     return {
         store,
         filters,
-        isAdvanced,
         liveBadge,
         summaryCards,
         trendOption,
-        sourceOption,
         segmentOption,
         simulatorOption,
         strengths: computed(() => store.strengths),
