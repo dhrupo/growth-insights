@@ -14,8 +14,8 @@ const endpointMap = {
     timeline: '/dashboard/timeline',
     insights: '/dashboard/insights',
     simulator: '/dashboard/simulator',
-    latestAnalysis: (username) => `/dashboard/github/latest-analysis/${encodeURIComponent(username)}`,
-    publicAnalysis: '/dashboard/github/public-analysis',
+    currentAnalysis: '/dashboard/github/current-analysis',
+    syncCurrentAnalysis: '/dashboard/github/current-analysis/sync',
 };
 
 const unwrap = (response) => response?.data?.data ?? response?.data ?? null;
@@ -60,24 +60,24 @@ const postSlice = async (slice, data) => {
 };
 
 export const dashboardApi = {
-    fetchLatestAnalysis: async (username) => {
+    fetchCurrentAnalysis: async () => {
         try {
-            const response = await api.get(endpointMap.latestAnalysis(username));
+            const response = await api.get(endpointMap.currentAnalysis);
             return {
                 data: unwrap(response),
                 error: null,
             };
         } catch (error) {
             if (import.meta.env.DEV) {
-                console.debug('[dashboard-api] latest analysis endpoint unavailable', error?.message ?? error);
+                console.debug('[dashboard-api] current analysis endpoint unavailable', error?.message ?? error);
             }
 
             return failure(error);
         }
     },
+    syncCurrentAnalysis: async () => postSlice('syncCurrentAnalysis'),
     fetchSummary: (params) => requestSlice('summary', params),
     fetchTimeline: (params) => requestSlice('timeline', params),
     fetchInsights: (params) => requestSlice('insights', params),
     fetchSimulator: (params) => requestSlice('simulator', params),
-    fetchPublicAnalysis: (params) => postSlice('publicAnalysis', params),
 };

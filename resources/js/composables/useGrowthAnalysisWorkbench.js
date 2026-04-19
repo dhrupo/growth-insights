@@ -1,4 +1,4 @@
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 
 import { useDashboardStore } from '@/stores/dashboard';
 
@@ -88,28 +88,20 @@ const buildSkillRadarOption = (analysis) => {
 
 export function useGrowthAnalysisWorkbench() {
     const store = useDashboardStore();
-
-    const publicForm = reactive({
-        username: store.analysis.username,
-    });
-    const publicActionLoading = ref(false);
-
-    watch(
-        () => store.analysis.username,
-        (username) => {
-            publicForm.username = username;
-        },
-        { immediate: true },
-    );
+    const analyzeActionLoading = ref(false);
 
     const analysis = computed(() => store.analysis);
     const analysisProfile = computed(() => store.analysis.profile);
     const analysisConnection = computed(() => store.analysis.connection);
     const analysisSummary = computed(() => store.analysis.summary);
     const analysisNotice = computed(() =>
-        analysis.value.analysisRunId
-            ? 'Showing the latest completed analysis for this username.'
-            : 'Public analysis has not been completed for this username yet.',
+        analysisConnection.value.connected
+            ? (
+                analysis.value.analysisRunId
+                    ? 'Showing the latest completed analysis for your connected GitHub account.'
+                    : 'GitHub is connected. Run an analysis to build your private-aware profile.'
+            )
+            : 'Connect GitHub to analyze your own activity and include private repositories you authorize.',
     );
     const analysisUpdatedLabel = computed(() => {
         const value = analysis.value.lastAnalyzedAt;
@@ -131,22 +123,18 @@ export function useGrowthAnalysisWorkbench() {
             minute: '2-digit',
         }).format(new Date(parsed));
     });
-    const publicLoading = computed(() => publicActionLoading.value);
+    const publicLoading = computed(() => analyzeActionLoading.value);
     const backgroundLoading = computed(() => store.analysisStatus === 'loading');
     const publicError = computed(() => store.analysisError);
     const skillRadarOption = computed(() => buildSkillRadarOption(store.analysis));
 
-    const runPublicAnalysis = async () => {
-        publicActionLoading.value = true;
+    const runCurrentAnalysis = async () => {
+        analyzeActionLoading.value = true;
 
         try {
-            await store.runPublicAnalysis({
-                username: publicForm.username,
-                range: store.filters.range,
-                segment: store.filters.segment,
-            });
+            await store.syncCurrentAnalysis();
         } finally {
-            publicActionLoading.value = false;
+            analyzeActionLoading.value = false;
         }
     };
 
@@ -158,11 +146,10 @@ export function useGrowthAnalysisWorkbench() {
         analysisSummary,
         analysisNotice,
         analysisUpdatedLabel,
-        publicForm,
         publicLoading,
         backgroundLoading,
         publicError,
         skillRadarOption,
-        runPublicAnalysis,
+        runCurrentAnalysis,
     };
 }

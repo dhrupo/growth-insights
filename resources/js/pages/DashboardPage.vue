@@ -1,6 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, defineAsyncComponent, onMounted } from 'vue';
 
 import { useDashboardInsights } from '@/composables/useDashboardInsights';
 import { useGrowthAnalysisWorkbench } from '@/composables/useGrowthAnalysisWorkbench';
@@ -8,9 +7,6 @@ import MetricCard from '@/components/dashboard/MetricCard.vue';
 import SurfaceCard from '@/components/ui/SurfaceCard.vue';
 
 const AsyncEChart = defineAsyncComponent(() => import('@/components/charts/EChart.vue'));
-
-const route = useRoute();
-const router = useRouter();
 
 const {
     summaryCards,
@@ -28,24 +24,29 @@ const {
     analysisConnection,
     analysisSummary,
     analysisNotice,
-    publicForm,
     publicLoading,
     backgroundLoading,
     publicError,
     skillRadarOption,
-    runPublicAnalysis,
+    analysisUpdatedLabel,
+    runCurrentAnalysis,
 } = useGrowthAnalysisWorkbench();
 
-const searchUsername = ref('');
+const githubConnectUrl = '/auth/github/redirect';
+const hasConnection = computed(() => analysisConnection.value.connected);
+const canAnalyze = computed(() => hasConnection.value);
+const loadingInitialProfile = computed(() => hasConnection.value && (backgroundLoading.value || publicLoading.value));
+const profileTitle = computed(() => {
+    if (analysisProfile.value.displayName) {
+        return analysisProfile.value.displayName;
+    }
 
-const routeUsername = computed(() =>
-    typeof route.params.username === 'string' && route.params.username.trim() !== ''
-        ? route.params.username.trim().replace(/^@+/, '')
-        : 'dhrupo',
-);
+    if (analysisProfile.value.username) {
+        return `@${analysisProfile.value.username}`;
+    }
 
-const loadingInitialProfile = computed(() => backgroundLoading.value && !store.hasAnalysisRun);
-const githubConnectUrl = computed(() => `/auth/github/redirect?username=${encodeURIComponent(routeUsername.value)}`);
+    return 'Your GitHub profile';
+});
 
 const snapshotStats = computed(() => {
     const summary = analysis.value.evidenceSummary ?? '';
@@ -187,100 +188,51 @@ const analyticsHighlights = computed(() => [
         value: snapshotMeta.value.confidence ? `${snapshotMeta.value.confidence}%` : 'Not scored',
         tone: 'text-emerald-700',
     },
-    {
-        label: 'Last analyzed',
-        value: analysisUpdatedLabel.value,
-        tone: 'text-slate-700',
-    },
+    { label: 'Last analyzed', value: analysisUpdatedLabel.value, tone: 'text-slate-700' },
 ]);
 
-const navigateToUsername = async (username) => {
-    const next = (username || '').trim().replace(/^@+/, '');
-
-    if (!next) {
-        return;
-    }
-
-    await router.push({
-        name: 'profile',
-        params: {
-            username: next,
-        },
-    });
-};
-
-const submitUsername = async () => {
-    const next = (searchUsername.value || '').trim().replace(/^@+/, '');
-
-    if (!next) {
-        return;
-    }
-
-    if (next === routeUsername.value) {
-        publicForm.username = next;
-        await runPublicAnalysis();
-        return;
-    }
-
-    await navigateToUsername(next);
-};
-
-watch(
-    routeUsername,
-    async (username) => {
-        searchUsername.value = username;
-        publicForm.username = username;
-
-        if (store.analysis.username !== username || !store.hasAnalysisRun) {
-            store.resetAnalysisState(username);
-        }
-
-        await store.loadLatestAnalysis(username);
-    },
-    { immediate: true },
-);
+onMounted(async () => {
+    store.resetAnalysisState();
+    await store.loadCurrentAnalysis();
+});
 </script>
 
 <template>
     <div class="space-y-6">
-        <section class="grid gap-6 xl:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.82fr)]">
+        <section class="grid gap-6">
             <SurfaceCard
                 title="Profile analysis"
-                description="Use the URL or search field to open a public profile. If private repositories matter, connect GitHub and recalculate the report."
+                description="Connect GitHub first, then analyze the account you authorized. The dashboard stays focused on your own profile instead of arbitrary public usernames."
             >
                 <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                     <div class="min-w-0">
                         <p class="text-sm font-medium text-slate-500">Current profile</p>
                         <h2 class="mt-2 truncate text-3xl font-semibold tracking-tight text-slate-950">
-                            @{{ routeUsername }}
+                            {{ profileTitle }}
                         </h2>
                         <p class="mt-2 text-sm leading-6 text-slate-600">
                             {{ analysisNotice }}
                         </p>
                     </div>
 
-                    <el-form class="w-full max-w-xl" @submit.prevent="submitUsername">
-                        <div class="flex flex-col gap-3 sm:flex-row">
-                            <el-input
-                                v-model="searchUsername"
-                                size="large"
-                                placeholder="Analyze another GitHub username"
-                                autocomplete="off"
-                                @keyup.enter="submitUsername"
-                            >
-                                <template #prepend>@</template>
-                            </el-input>
-                            <el-button
-                                type="primary"
-                                size="large"
-                                class="sm:min-w-36"
-                                :loading="publicLoading"
-                                @click="submitUsername"
-                            >
-                                Analyze
-                            </el-button>
-                        </div>
-                    </el-form>
+                    <div class="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:justify-end">
+                        <a
+                            :href="githubConnectUrl"
+                            class="inline-flex min-h-11 items-center justify-center rounded-xl border border-brand-200 bg-white px-5 py-3 text-sm font-semibold text-brand-700 shadow-sm transition hover:border-brand-300 hover:bg-brand-50 sm:flex-1"
+                        >
+                            {{ hasConnection ? 'Reconnect GitHub' : 'Connect GitHub' }}
+                        </a>
+                        <el-button
+                            type="primary"
+                            size="large"
+                            class="sm:flex-1"
+                            :disabled="!canAnalyze"
+                            :loading="publicLoading"
+                            @click="runCurrentAnalysis"
+                        >
+                            {{ store.hasAnalysisRun ? 'Recalculate analysis' : 'Analyze my profile' }}
+                        </el-button>
+                    </div>
                 </div>
 
                 <div v-if="analysis.evidenceSummary" class="mt-6 overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.14),_transparent_42%),linear-gradient(135deg,#0f172a_0%,#172554_100%)] px-5 py-5 text-white shadow-[0_24px_48px_-28px_rgba(15,23,42,0.9)]">
@@ -330,38 +282,6 @@ watch(
                             <p class="mt-2 text-2xl font-semibold text-white">{{ item.value }}</p>
                         </div>
                     </div>
-                </div>
-            </SurfaceCard>
-
-            <SurfaceCard
-                title="GitHub connection"
-                description="Public analysis is enough for a baseline. Connect GitHub only when you want private repositories included in the report."
-            >
-                <div class="space-y-5">
-                    <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                        <div class="flex items-center justify-between gap-4">
-                            <div>
-                                <p class="text-sm font-semibold text-slate-950">Connection status</p>
-                                <p class="mt-1 text-sm text-slate-500">Use GitHub login to grant access without exposing repository credentials on the page.</p>
-                            </div>
-                            <el-tag effect="light" :type="analysisConnection.connected ? 'success' : 'info'">
-                                {{ analysisConnection.connected ? 'Connected' : 'Not connected' }}
-                            </el-tag>
-                        </div>
-                    </div>
-
-                    <a :href="githubConnectUrl" class="block">
-                        <el-button type="primary" size="large" class="w-full">
-                            Connect GitHub
-                        </el-button>
-                    </a>
-
-                    <div class="rounded-2xl border border-blue-100 bg-blue-50/70 p-4 text-sm leading-6 text-blue-950/85">
-                        <p class="font-semibold text-blue-950">How it works</p>
-                        <p class="mt-2">{{ analysisConnection.note }}</p>
-                        <p class="mt-2">No personal access token needs to be pasted into the site.</p>
-                    </div>
-
                 </div>
             </SurfaceCard>
         </section>
@@ -415,7 +335,7 @@ watch(
 
             <section class="grid gap-6">
                 <SurfaceCard
-                    :title="analysisProfile.displayName || `@${routeUsername}`"
+                    :title="profileTitle"
                     :description="analysisProfile.bio || 'Public GitHub activity translated into growth signals.'"
                 >
                     <template #actions>

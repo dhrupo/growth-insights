@@ -4,8 +4,6 @@ import { dashboardApi } from '@/services/dashboardApi';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
-const normalizeUsername = (value) => value.trim().replace(/^@+/, '');
-
 const humanizeUsername = (value) =>
     value
         .split(/[._-]+/g)
@@ -13,15 +11,20 @@ const humanizeUsername = (value) =>
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ');
 
-const mergeAnalysisResponse = (baseAnalysis, payload, username) => {
+const mergeAnalysisResponse = (baseAnalysis, payload, username = '') => {
     const analysis = clone(baseAnalysis);
+    const resolvedUsername = username
+        || payload?.profile?.username
+        || payload?.username
+        || analysis.username
+        || '';
 
     analysis.analysisRunId = payload?.analysisRunId ?? analysis.analysisRunId ?? null;
-    analysis.username = username;
-    analysis.profile.username = username;
+    analysis.username = resolvedUsername;
+    analysis.profile.username = resolvedUsername;
     analysis.profile.displayName = payload?.profile?.displayName
         ?? payload?.profile?.name
-        ?? humanizeUsername(username);
+        ?? (resolvedUsername ? humanizeUsername(resolvedUsername) : '');
     analysis.profile.role = payload?.profile?.role
         ?? analysis.profile.role;
     analysis.profile.bio = payload?.profile?.bio
@@ -112,7 +115,7 @@ const emptyAnalysis = () => ({
         enabled: false,
         connected: false,
         workspace: 'GitHub is not connected',
-        note: 'Connect GitHub to include any private repositories you authorize.',
+        note: 'Connect GitHub to analyze your own contribution history and optionally include private repositories you authorize.',
     },
     scoreBreakdown: {
         categories: [],
@@ -290,14 +293,9 @@ export const useDashboardStore = defineStore('dashboard', {
         },
     },
     actions: {
-        resetAnalysisState(username = '') {
+        resetAnalysisState() {
             this.analysis = {
                 ...emptyAnalysis(),
-                username,
-                profile: {
-                    ...emptyAnalysis().profile,
-                    username,
-                },
             };
             this.summary = [];
             this.timeline = emptyTimeline();
@@ -349,7 +347,6 @@ export const useDashboardStore = defineStore('dashboard', {
                 segment: nextFilters.segment,
                 query: nextFilters.query,
                 mode: nextFilters.mode,
-                github_username: this.analysis?.username || undefined,
             };
 
             const settled = await Promise.allSettled(
@@ -402,87 +399,52 @@ export const useDashboardStore = defineStore('dashboard', {
         async refresh() {
             return this.fetchDashboardData();
         },
-        async runPublicAnalysis({ username, range, segment } = {}) {
-            const normalizedUsername = normalizeUsername(username || this.analysis.username || '');
-
-            if (!normalizedUsername) {
-                this.analysisStatus = 'error';
-                this.analysisError = 'Enter a GitHub username to run a public analysis.';
-                return null;
-            }
-
+        async syncCurrentAnalysis() {
             this.analysisStatus = 'loading';
             this.analysisError = null;
 
-            const payload = await dashboardApi.fetchPublicAnalysis({
-                username: normalizedUsername,
-                range: range ?? this.filters.range,
-                segment: segment ?? this.filters.segment,
-            });
+            const payload = await dashboardApi.syncCurrentAnalysis();
             const responsePayload = payload?.data ?? null;
             const responseError = payload?.error ?? null;
 
-            const nextAnalysis = mergeAnalysisResponse(
-                emptyAnalysis(),
-                responsePayload,
-                normalizedUsername,
-            );
-
             if (!responsePayload) {
-                nextAnalysis.source = 'empty';
-                nextAnalysis.summary = [];
-                nextAnalysis.evidenceSummary = null;
-                nextAnalysis.weeklyPlan = [];
-                nextAnalysis.connection = {
-                    ...emptyAnalysis().connection,
-                    note: 'Run a public analysis to populate this profile.',
-                };
-            } else {
-                nextAnalysis.source = 'live';
-            }
-
-            this.analysis = nextAnalysis;
-            this.analysisStatus = 'ready';
-            this.dataSource = responsePayload ? 'live' : 'empty';
-            this.analysisError = responseError?.message ?? null;
-
-            if (responsePayload) {
-                await this.fetchDashboardData();
-            }
-
-            return this.analysis;
-        },
-        async loadLatestAnalysis(username) {
-            const normalizedUsername = normalizeUsername(username || this.analysis.username || '');
-
-            if (!normalizedUsername) {
+                this.analysisStatus = 'error';
+                this.analysisError = responseError?.message ?? 'Analysis failed.';
                 return null;
             }
 
+            this.analysis = mergeAnalysisResponse(emptyAnalysis(), responsePayload);
+            this.analysisStatus = 'ready';
+            this.dataSource = responsePayload.source === 'mixed' ? 'mixed' : 'live';
+            this.analysisError = null;
+            await this.fetchDashboardData();
+
+            return this.analysis;
+        },
+        async loadCurrentAnalysis() {
             this.analysisStatus = 'loading';
             this.analysisError = null;
 
-            const payload = await dashboardApi.fetchLatestAnalysis(normalizedUsername);
+            const payload = await dashboardApi.fetchCurrentAnalysis();
             const responsePayload = payload?.data ?? null;
             const responseError = payload?.error ?? null;
 
             if (!responsePayload) {
                 this.analysisStatus = 'idle';
-                this.analysisError = responseError?.status && responseError.status !== 404
-                    ? responseError.message
-                    : null;
+                this.analysisError = responseError?.message ?? null;
+                this.resetAnalysisState();
                 return null;
             }
 
-            this.analysis = mergeAnalysisResponse(
-                emptyAnalysis(),
-                responsePayload,
-                normalizedUsername,
-            );
+            this.analysis = mergeAnalysisResponse(emptyAnalysis(), responsePayload);
             this.analysisStatus = 'ready';
-            this.dataSource = responsePayload.source === 'mixed' ? 'mixed' : 'live';
+            this.dataSource = responsePayload.analysisRunId
+                ? (responsePayload.source === 'mixed' ? 'mixed' : 'live')
+                : 'empty';
             this.analysisError = null;
-            await this.fetchDashboardData();
+            if (responsePayload.analysisRunId) {
+                await this.fetchDashboardData();
+            }
 
             return this.analysis;
         },

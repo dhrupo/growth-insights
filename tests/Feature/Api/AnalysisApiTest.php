@@ -174,29 +174,17 @@ class AnalysisApiTest extends TestCase
             ]);
     }
 
-    public function test_dashboard_workbench_endpoints_return_analysis_payload_for_public_and_connected_flows(): void
+    public function test_dashboard_current_analysis_returns_empty_state_without_connection(): void
     {
-        Http::fake($this->analysisHttpFake($this->publicGitHubFake(), $this->geminiFakeResponse()));
+        $this->getJson('/api/dashboard/github/current-analysis')
+            ->assertOk()
+            ->assertJsonPath('data.analysisRunId', null)
+            ->assertJsonPath('data.connection.connected', false)
+            ->assertJsonPath('data.profile.username', '');
+    }
 
-        $this->postJson('/api/dashboard/github/public-analysis', [
-            'username' => 'octocat',
-        ])->assertOk()
-            ->assertJsonPath('data.profile.username', 'octocat')
-            ->assertJsonStructure([
-                'data' => [
-                    'profile',
-                    'summary',
-                    'connection',
-                    'scoreBreakdown',
-                    'skillDistribution',
-                    'strengths',
-                    'weaknesses',
-                    'recommendations',
-                ],
-            ]);
-
-        Http::fake($this->analysisHttpFake($this->privateGitHubFake(), $this->geminiFakeResponse()));
-
+    public function test_dashboard_workbench_endpoints_return_analysis_payload_for_connected_flow(): void
+    {
         $connection = GitHubConnection::create([
             'user_id' => null,
             'github_username' => 'octocat',
@@ -206,11 +194,31 @@ class AnalysisApiTest extends TestCase
             'connected_at' => now(),
         ]);
 
-        $this->postJson("/api/github/connections/{$connection->id}/sync")
-            ->assertOk();
-
-        $this->getJson('/api/dashboard/github/latest-analysis/octocat')
+        $this->withSession([
+            'github.current_connection_id' => $connection->id,
+            'github.current_username' => 'octocat',
+        ])->getJson('/api/dashboard/github/current-analysis')
             ->assertOk()
+            ->assertJsonPath('data.analysisRunId', null)
+            ->assertJsonPath('data.connection.connected', true)
+            ->assertJsonPath('data.profile.username', 'octocat');
+
+        Http::fake($this->analysisHttpFake($this->privateGitHubFake(), $this->geminiFakeResponse()));
+
+        $this->withSession([
+            'github.current_connection_id' => $connection->id,
+            'github.current_username' => 'octocat',
+        ])->postJson('/api/dashboard/github/current-analysis/sync')
+            ->assertOk()
+            ->assertJsonPath('data.connection.connected', true)
+            ->assertJsonPath('data.source', 'mixed');
+
+        $this->withSession([
+            'github.current_connection_id' => $connection->id,
+            'github.current_username' => 'octocat',
+        ])->getJson('/api/dashboard/github/current-analysis')
+            ->assertOk()
+            ->assertJsonPath('data.profile.username', 'octocat')
             ->assertJsonPath('data.connection.connected', true)
             ->assertJsonPath('data.source', 'mixed');
     }

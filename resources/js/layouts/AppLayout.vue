@@ -6,9 +6,8 @@ const route = useRoute();
 
 const pageTitle = computed(() => route.meta.title ?? 'Growth Insights');
 const pageDescription = computed(
-    () => route.meta.description ?? 'Developer growth signals from public GitHub activity.',
+    () => route.meta.description ?? 'Developer growth signals from the GitHub account you explicitly connect.',
 );
-const username = computed(() => (typeof route.params.username === 'string' ? route.params.username : 'dhrupo'));
 </script>
 
 <template>
@@ -19,7 +18,7 @@ const username = computed(() => (typeof route.params.username === 'string' ? rou
                 <div class="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                     <div class="max-w-3xl">
                         <h1 class="text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
-                            {{ pageTitle }} for <span class="text-brand-600">@{{ username }}</span>
+                            {{ pageTitle }}
                         </h1>
                         <p class="mt-3 text-sm leading-6 text-slate-600 sm:text-base">
                             {{ pageDescription }}

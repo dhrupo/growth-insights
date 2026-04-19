@@ -10,6 +10,36 @@ class DashboardPayloadBuilder
 {
     private const SCORE_SCALE = 10;
 
+    public function connectionState(?GitHubConnection $connection, ?string $githubUsername = null): array
+    {
+        $username = $connection?->github_username ?: $githubUsername;
+
+        if ($connection === null) {
+            return [
+                'enabled' => false,
+                'connected' => false,
+                'workspace' => 'GitHub is not connected',
+                'note' => 'Connect GitHub to analyze your own contribution history and optionally include private repositories you authorize.',
+            ];
+        }
+
+        $connected = filled($connection->access_token);
+        $syncStatus = $connection->sync_status ?: 'idle';
+
+        return [
+            'enabled' => true,
+            'connected' => $connected,
+            'workspace' => $connected
+                ? sprintf('Connected as %s', $username ?: 'your GitHub account')
+                : 'GitHub connection needs attention',
+            'note' => match (true) {
+                $syncStatus === 'failed' && filled($connection->sync_error) => sprintf('The last sync failed: %s', $connection->sync_error),
+                $connection->last_synced_at !== null => sprintf('Last synced %s.', $connection->last_synced_at->diffForHumans()),
+                default => 'Connect GitHub and run an analysis to build your profile from the account you authorized.',
+            },
+        ];
+    }
+
     public function summary(AnalysisRun $run): array
     {
         $snapshot = $run->metricSnapshot;
@@ -175,14 +205,7 @@ class DashboardPayloadBuilder
                 ];
             })->values()->all(),
             'connection' => [
-                'enabled' => $connection !== null,
-                'connected' => $connection !== null && filled($connection->access_token),
-                'workspace' => $connection !== null
-                    ? sprintf('GitHub is connected for %s', $run->github_username)
-                    : 'GitHub is not connected',
-                'note' => $connection !== null && filled($connection->access_token)
-                    ? 'Private repositories are included in the most recent synced analysis.'
-                    : 'Connect GitHub to include any repositories you authorize beyond the public baseline.',
+                ...$this->connectionState($connection, $run->github_username),
             ],
             'scoreBreakdown' => [
                 'categories' => $scoreBreakdown->pluck('label')->all(),
@@ -206,6 +229,51 @@ class DashboardPayloadBuilder
             ])->values()->all(),
             'source' => $run->analysis_mode === 'public_private' ? 'mixed' : 'live',
             'lastAnalyzedAt' => optional($run->completed_at)->toIso8601String(),
+        ];
+    }
+
+    public function currentSession(?GitHubConnection $connection, ?AnalysisRun $run = null): array
+    {
+        if ($run !== null) {
+            return $this->workbench($run, $connection ?? $run->githubConnection);
+        }
+
+        $username = $connection?->github_username ?? '';
+
+        return [
+            'analysisRunId' => null,
+            'profile' => [
+                'username' => $username,
+                'displayName' => $username !== ''
+                    ? str($username)->replace(['-', '_'], ' ')->title()->toString()
+                    : 'Your GitHub profile',
+                'role' => '',
+                'bio' => $connection !== null
+                    ? 'GitHub is connected. Run an analysis to turn the account into a readable growth profile.'
+                    : 'Connect GitHub to analyze your own activity and build a private-aware profile.',
+                'followers' => 0,
+                'publicRepos' => 0,
+                'contributionStreak' => 0,
+                'publicPullRequests' => 0,
+            ],
+            'summary' => [],
+            'evidenceSummary' => null,
+            'weeklyPlan' => [],
+            'connection' => $this->connectionState($connection, $username),
+            'scoreBreakdown' => [
+                'categories' => [],
+                'values' => [],
+                'benchmark' => [],
+            ],
+            'skillDistribution' => [
+                'categories' => [],
+                'values' => [],
+            ],
+            'strengths' => [],
+            'weaknesses' => [],
+            'recommendations' => [],
+            'source' => 'empty',
+            'lastAnalyzedAt' => null,
         ];
     }
 

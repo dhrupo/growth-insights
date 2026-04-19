@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Services\Analysis\DashboardPayloadBuilder;
 use App\Services\Analysis\GrowthAnalysisService;
+use App\Models\GitHubConnection;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,6 +12,39 @@ use Symfony\Component\HttpFoundation\Response;
 
 class DashboardGitHubController extends ApiController
 {
+    public function currentAnalysis(
+        Request $request,
+        GrowthAnalysisService $growthAnalysisService,
+        DashboardPayloadBuilder $payloadBuilder,
+    ): JsonResponse {
+        $connection = $this->currentConnection($request, $growthAnalysisService);
+        $run = $connection ? $growthAnalysisService->latestForConnection($connection) : null;
+
+        return $this->json($payloadBuilder->currentSession($connection, $run));
+    }
+
+    public function syncCurrentAnalysis(
+        Request $request,
+        GrowthAnalysisService $growthAnalysisService,
+        DashboardPayloadBuilder $payloadBuilder,
+    ): JsonResponse {
+        $connection = $this->currentConnection($request, $growthAnalysisService);
+
+        if ($connection === null) {
+            return response()->json([
+                'message' => 'Connect GitHub before running an analysis.',
+            ], Response::HTTP_CONFLICT);
+        }
+
+        try {
+            $run = $growthAnalysisService->syncConnection($connection);
+        } catch (RequestException $exception) {
+            return $this->upstreamFailure($exception, 'GitHub analysis failed.');
+        }
+
+        return $this->json($payloadBuilder->workbench($run, $connection));
+    }
+
     public function latestAnalysis(
         string $githubUsername,
         GrowthAnalysisService $growthAnalysisService,
@@ -59,5 +93,26 @@ class DashboardGitHubController extends ApiController
         return response()->json([
             'message' => $message,
         ], $status);
+    }
+
+    private function currentConnection(Request $request, GrowthAnalysisService $growthAnalysisService): ?GitHubConnection
+    {
+        $connectionId = $request->session()->get('github.current_connection_id');
+
+        if ($connectionId) {
+            $connection = GitHubConnection::query()->find($connectionId);
+
+            if ($connection !== null) {
+                return $connection;
+            }
+        }
+
+        $githubUsername = (string) $request->session()->get('github.current_username', '');
+
+        if ($githubUsername === '') {
+            return null;
+        }
+
+        return $growthAnalysisService->connectionForUsername($githubUsername);
     }
 }

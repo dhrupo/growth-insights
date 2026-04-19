@@ -5,32 +5,15 @@ import AppLayout from '@/layouts/AppLayout.vue';
 const routes = [
     {
         path: '/',
-        name: 'home',
-        component: () => import('@/pages/HomePage.vue'),
-        meta: {
-            title: 'Growth Insights',
-            description: 'Start with a GitHub username and open a full growth profile.',
-        },
-    },
-    {
-        path: '/dashboard',
-        redirect: '/',
-    },
-    {
-        path: '/dashboard/advanced',
-        redirect: '/',
-    },
-    {
-        path: '/:username',
         component: AppLayout,
         children: [
             {
                 path: '',
-                name: 'profile',
+                name: 'dashboard',
                 component: () => import('@/pages/DashboardPage.vue'),
                 meta: {
                     title: 'Growth Insights',
-                    description: 'Public GitHub analysis with optional private enrichment.',
+                    description: 'Connect GitHub, analyze your own profile, and keep the dashboard focused on your account.',
                 },
             },
         ],
@@ -54,10 +37,7 @@ const router = createRouter({
 });
 
 router.afterEach((to) => {
-    const username = typeof to.params.username === 'string' ? to.params.username : null;
-    const pageTitle = username
-        ? `@${username} | Growth Insights`
-        : (to.meta.title ? `${to.meta.title} | Growth Insights` : 'Growth Insights');
+    const pageTitle = to.meta.title ? `${to.meta.title} | Growth Insights` : 'Growth Insights';
     document.title = pageTitle;
 });
 

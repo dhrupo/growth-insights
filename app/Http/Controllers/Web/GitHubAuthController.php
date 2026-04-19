@@ -18,26 +18,19 @@ class GitHubAuthController extends Controller
 {
     public function redirect(Request $request): RedirectResponse
     {
-        $username = trim((string) $request->query('username', ''));
-
-        if ($username === '') {
-            return redirect('/')->withFragment('analyze');
-        }
-
         $clientId = (string) config('services.github.client_id');
         $redirectUri = (string) config('services.github.redirect_uri');
 
         if ($clientId === '' || $redirectUri === '') {
             Log::warning('GitHub OAuth redirect skipped because configuration is incomplete.', [
-                'username' => $username,
+                'session' => $request->session()->getId(),
             ]);
-            return redirect("/{$username}");
+            return redirect('/');
         }
 
         $state = Str::random(40);
 
         $request->session()->put('github.oauth.state', $state);
-        $request->session()->put('github.oauth.username', $username);
 
         $query = http_build_query([
             'client_id' => $clientId,
@@ -55,25 +48,22 @@ class GitHubAuthController extends Controller
         GitHubApiClient $gitHubApiClient,
         GrowthAnalysisService $growthAnalysisService
     ): RedirectResponse {
-        $username = (string) $request->session()->pull('github.oauth.username', 'dhrupo');
         $state = (string) $request->session()->pull('github.oauth.state', '');
 
         if ($request->filled('error')) {
             Log::warning('GitHub OAuth callback returned an authorization error.', [
-                'username' => $username,
                 'error' => $request->query('error'),
                 'error_description' => $request->query('error_description'),
             ]);
-            return redirect("/{$username}");
+            return redirect('/');
         }
 
         if ($state === '' || $request->query('state') !== $state) {
             Log::warning('GitHub OAuth callback failed state verification.', [
-                'username' => $username,
                 'expected_state' => $state !== '' ? 'present' : 'missing',
                 'received_state' => $request->filled('state') ? 'present' : 'missing',
             ]);
-            return redirect("/{$username}");
+            return redirect('/');
         }
 
         $clientId = (string) config('services.github.client_id');
@@ -82,9 +72,9 @@ class GitHubAuthController extends Controller
 
         if ($clientId === '' || $clientSecret === '' || $redirectUri === '') {
             Log::warning('GitHub OAuth callback aborted because configuration is incomplete.', [
-                'username' => $username,
+                'session' => $request->session()->getId(),
             ]);
-            return redirect("/{$username}");
+            return redirect('/');
         }
 
         try {
@@ -105,14 +95,18 @@ class GitHubAuthController extends Controller
 
             if ($token === '') {
                 Log::warning('GitHub OAuth callback did not receive an access token.', [
-                    'username' => $username,
                     'response_keys' => array_keys($response),
                 ]);
-                return redirect("/{$username}");
+                return redirect('/');
             }
 
             $profile = $gitHubApiClient->authenticatedProfile($token);
-            $resolvedUsername = (string) ($profile['login'] ?? $username);
+            $resolvedUsername = (string) ($profile['login'] ?? '');
+
+            if ($resolvedUsername === '') {
+                Log::warning('GitHub OAuth callback did not resolve an authenticated username.');
+                return redirect('/');
+            }
 
             $connection = GitHubConnection::query()->updateOrCreate(
                 ['github_username' => $resolvedUsername, 'user_id' => null],
@@ -141,16 +135,17 @@ class GitHubAuthController extends Controller
                 ]);
             }
 
+            $request->session()->put('github.current_connection_id', $connection->id);
+            $request->session()->put('github.current_username', $resolvedUsername);
+
             Log::info('GitHub OAuth login completed.', [
-                'requested_username' => $username,
                 'resolved_username' => $resolvedUsername,
                 'connection_id' => $connection->id,
             ]);
 
-            return redirect("/{$resolvedUsername}");
+            return redirect('/');
         } catch (RequestException $exception) {
             Log::error('GitHub OAuth callback failed while exchanging or using the access token.', [
-                'username' => $username,
                 'status' => $exception->response?->status(),
                 'message' => $exception->response?->json('message')
                     ?? $exception->response?->json('error_description')
@@ -158,15 +153,14 @@ class GitHubAuthController extends Controller
                     ?? $exception->getMessage(),
             ]);
 
-            return redirect("/{$username}");
+            return redirect('/');
         } catch (Throwable $throwable) {
             Log::error('GitHub OAuth callback failed unexpectedly.', [
-                'username' => $username,
                 'exception' => $throwable::class,
                 'message' => $throwable->getMessage(),
             ]);
 
-            return redirect("/{$username}");
+            return redirect('/');
         }
     }
 }
