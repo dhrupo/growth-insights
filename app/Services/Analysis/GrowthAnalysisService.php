@@ -94,7 +94,6 @@ class GrowthAnalysisService
         $repos = collect($repos)
             ->filter(static fn (array $repo): bool => ! (bool) ($repo['archived'] ?? false))
             ->sortByDesc(static fn (array $repo): string => (string) ($repo['updated_at'] ?? ''))
-            ->take(10)
             ->values();
 
         $historyFacts = $this->buildFacts(
@@ -285,6 +284,87 @@ class GrowthAnalysisService
         return $analysisRun;
     }
 
+    private function buildRepositoryUniverse(
+        Collection $repositories,
+        array $globalPullRequests,
+        array $globalIssues,
+        Carbon $windowStart,
+        Carbon $windowEnd,
+    ): Collection {
+        $activityRepositoryNames = collect($globalPullRequests)
+            ->merge($globalIssues)
+            ->map(fn (array $item): string => (string) str((string) data_get($item, 'repository_url', ''))->after('/repos/'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $recentRepositories = $repositories
+            ->filter(function (array $repository) use ($windowStart, $windowEnd, $activityRepositoryNames): bool {
+                $fullName = (string) ($repository['full_name'] ?? '');
+
+                if ($fullName !== '' && $activityRepositoryNames->contains($fullName)) {
+                    return true;
+                }
+
+                $lastActivity = $repository['pushed_at'] ?? $repository['updated_at'] ?? null;
+
+                if (! $lastActivity) {
+                    return false;
+                }
+
+                return Carbon::parse($lastActivity)->betweenIncluded($windowStart, $windowEnd);
+            })
+            ->keyBy(fn (array $repository): string => (string) ($repository['full_name'] ?? ''));
+
+        foreach ($activityRepositoryNames as $fullName) {
+            if ($recentRepositories->has($fullName)) {
+                continue;
+            }
+
+            $recentRepositories->put($fullName, [
+                'full_name' => $fullName,
+                'name' => (string) str($fullName)->afterLast('/'),
+                'language' => null,
+                'size' => 1,
+                'private' => null,
+                'html_url' => filled($fullName) ? 'https://github.com/'.$fullName : null,
+                'description' => null,
+                'updated_at' => null,
+                'pushed_at' => null,
+            ]);
+        }
+
+        return $recentRepositories
+            ->values()
+            ->sortByDesc(static fn (array $repository): string => (string) ($repository['updated_at'] ?? $repository['pushed_at'] ?? ''))
+            ->values();
+    }
+
+    private function repositoryLanguageBytes(array $repository, ?string $token): array
+    {
+        $fullName = (string) ($repository['full_name'] ?? '');
+
+        if ($fullName !== '') {
+            $languages = $this->github->repositoryLanguages($fullName, $token);
+
+            if (is_array($languages) && $languages !== []) {
+                return collect($languages)
+                    ->mapWithKeys(static fn ($bytes, $language): array => [strtolower((string) $language) => max(1, (int) $bytes)])
+                    ->all();
+            }
+        }
+
+        $primaryLanguage = strtolower((string) ($repository['language'] ?? ''));
+
+        if ($primaryLanguage === '') {
+            return [];
+        }
+
+        return [
+            $primaryLanguage => max(1, (int) ($repository['size'] ?? 1)),
+        ];
+    }
+
     private function buildFacts(
         string $githubUsername,
         string $resolvedUsername,
@@ -297,18 +377,15 @@ class GrowthAnalysisService
     ): array {
         $languageBytes = [];
         $repositoryNames = [];
-        $commitMessages = [];
-        $pullRequestTitles = [];
-        $issueTitles = [];
         $events = [];
         $reposTouched = [];
         $commitCount = 0;
         $pullRequestCount = 0;
         $issueCount = 0;
         $activeDays = [];
-        $eventTypeDays = [];
         $globalPullRequests = $this->github->authorPullRequests($githubUsername, $windowStart, $token);
         $globalIssues = $this->github->authorIssues($githubUsername, $windowStart, $token);
+        $repositories = $this->buildRepositoryUniverse($repositories, $globalPullRequests, $globalIssues, $windowStart, $windowEnd);
 
         foreach ($repositories as $repository) {
             $fullName = $repository['full_name'] ?? null;
@@ -319,9 +396,8 @@ class GrowthAnalysisService
 
             $repositoryNames[] = $fullName;
 
-            $primaryLanguage = strtolower((string) ($repository['language'] ?? ''));
-            if ($primaryLanguage !== '') {
-                $languageBytes[$primaryLanguage] = ($languageBytes[$primaryLanguage] ?? 0) + max(1, (int) ($repository['size'] ?? 1));
+            foreach ($this->repositoryLanguageBytes($repository, $token) as $language => $bytes) {
+                $languageBytes[$language] = ($languageBytes[$language] ?? 0) + $bytes;
             }
 
             $commits = $this->github->repositoryCommits($fullName, $githubUsername, $windowStart, $token);
@@ -336,8 +412,6 @@ class GrowthAnalysisService
                 $reposTouched[$fullName] = true;
                 $dateString = Carbon::parse($date)->toDateString();
                 $activeDays[$dateString] = true;
-                $eventTypeDays['commit'][$dateString] = true;
-                $commitMessages[] = (string) data_get($commit, 'commit.message', '');
                 $events[] = [
                     'type' => 'commit',
                     'date' => $dateString,
@@ -363,8 +437,6 @@ class GrowthAnalysisService
             }
             $dateString = Carbon::parse($date)->toDateString();
             $activeDays[$dateString] = true;
-            $eventTypeDays['pull_request'][$dateString] = true;
-            $pullRequestTitles[] = (string) data_get($pullRequest, 'title', '');
             $events[] = [
                 'type' => 'pull_request',
                 'date' => $dateString,
@@ -393,8 +465,6 @@ class GrowthAnalysisService
             }
             $dateString = Carbon::parse($date)->toDateString();
             $activeDays[$dateString] = true;
-            $eventTypeDays['issue'][$dateString] = true;
-            $issueTitles[] = (string) data_get($issue, 'title', '');
             $events[] = [
                 'type' => 'issue',
                 'date' => $dateString,
@@ -403,10 +473,14 @@ class GrowthAnalysisService
             ];
         }
 
-        $totalWeeks = max(1, Carbon::parse($windowStart)->diffInWeeks(Carbon::parse($windowEnd)) + 1);
-        $activeWeeks = collect($events)
-            ->groupBy(static fn (array $event) => Carbon::parse($event['date'])->startOfWeek()->toDateString())
-            ->filter(static fn (Collection $weekEvents): bool => $weekEvents->isNotEmpty())
+        $weeklyBuckets = $this->weeklyTimelineBuilder->build([
+            'window_start' => $windowStart->toDateString(),
+            'window_end' => $windowEnd->toDateString(),
+            'events' => $events,
+        ]);
+        $totalWeeks = count($weeklyBuckets);
+        $activeWeeks = collect($weeklyBuckets)
+            ->filter(static fn (array $bucket): bool => ($bucket['total_events'] ?? 0) > 0)
             ->count();
 
         $totalLanguageBytes = array_sum($languageBytes);
@@ -420,12 +494,36 @@ class GrowthAnalysisService
         $topLanguages = array_slice($languageBytes, 0, 5, true);
         $languageEntropy = $this->languageEntropy($languageShares);
         $languageBreadth = $this->languageBreadth($languageShares);
-
-        $weeklyBuckets = $this->weeklyTimelineBuilder->build([
-            'window_start' => $windowStart->toDateString(),
-            'window_end' => $windowEnd->toDateString(),
-            'events' => $events,
-        ]);
+        $commitRecords = collect($events)
+            ->where('type', 'commit')
+            ->sortByDesc('date')
+            ->values()
+            ->map(fn (array $event): array => [
+                'date' => $event['date'],
+                'repo' => $event['repo'],
+                'message' => $event['message'],
+            ])->all();
+        $pullRequestRecords = collect($events)
+            ->where('type', 'pull_request')
+            ->sortByDesc('date')
+            ->values()
+            ->map(fn (array $event): array => [
+                'date' => $event['date'],
+                'repo' => $event['repo'],
+                'message' => $event['message'],
+            ])->all();
+        $issueRecords = collect($events)
+            ->where('type', 'issue')
+            ->sortByDesc('date')
+            ->values()
+            ->map(fn (array $event): array => [
+                'date' => $event['date'],
+                'repo' => $event['repo'],
+                'message' => $event['message'],
+            ])->all();
+        $commitMessages = collect($commitRecords)->pluck('message')->filter()->take(30)->all();
+        $pullRequestTitles = collect($pullRequestRecords)->pluck('message')->filter()->take(30)->all();
+        $issueTitles = collect($issueRecords)->pluck('message')->filter()->take(30)->all();
 
         $momentumScore = $this->momentumScore($weeklyBuckets);
         $collaborationScore = $this->collaborationScore($pullRequestCount, $issueCount, count($reposTouched));
@@ -448,24 +546,12 @@ class GrowthAnalysisService
             'language_shares' => $languageShares,
             'language_entropy' => $languageEntropy,
             'language_breadth' => $languageBreadth,
-            'commit_messages' => array_slice($commitMessages, 0, 30),
-            'pull_request_titles' => array_slice($pullRequestTitles, 0, 30),
-            'issue_titles' => array_slice($issueTitles, 0, 30),
-            'commit_records' => collect($events)->where('type', 'commit')->map(fn (array $event): array => [
-                'date' => $event['date'],
-                'repo' => $event['repo'],
-                'message' => $event['message'],
-            ])->values()->all(),
-            'pull_request_records' => collect($events)->where('type', 'pull_request')->map(fn (array $event): array => [
-                'date' => $event['date'],
-                'repo' => $event['repo'],
-                'message' => $event['message'],
-            ])->values()->all(),
-            'issue_records' => collect($events)->where('type', 'issue')->map(fn (array $event): array => [
-                'date' => $event['date'],
-                'repo' => $event['repo'],
-                'message' => $event['message'],
-            ])->values()->all(),
+            'commit_messages' => $commitMessages,
+            'pull_request_titles' => $pullRequestTitles,
+            'issue_titles' => $issueTitles,
+            'commit_records' => $commitRecords,
+            'pull_request_records' => $pullRequestRecords,
+            'issue_records' => $issueRecords,
             'events' => $events,
             'weekly_buckets' => $weeklyBuckets,
             'collaboration_score' => $collaborationScore,
@@ -524,18 +610,21 @@ class GrowthAnalysisService
 
         $commitMessages = collect($facts['commit_records'] ?? [])
             ->filter(fn (array $record): bool => Carbon::parse($record['date'])->betweenIncluded($windowStart, $windowEnd))
+            ->sortByDesc('date')
             ->pluck('message')
             ->take(30)
             ->all();
 
         $pullRequestTitles = collect($facts['pull_request_records'] ?? [])
             ->filter(fn (array $record): bool => Carbon::parse($record['date'])->betweenIncluded($windowStart, $windowEnd))
+            ->sortByDesc('date')
             ->pluck('message')
             ->take(30)
             ->all();
 
         $issueTitles = collect($facts['issue_records'] ?? [])
             ->filter(fn (array $record): bool => Carbon::parse($record['date'])->betweenIncluded($windowStart, $windowEnd))
+            ->sortByDesc('date')
             ->pluck('message')
             ->take(30)
             ->all();
@@ -544,7 +633,7 @@ class GrowthAnalysisService
         $windowFacts['window_start'] = $windowStart->toDateString();
         $windowFacts['window_end'] = $windowEnd->toDateString();
         $windowFacts['window_days'] = $windowStart->diffInDays($windowEnd) + 1;
-        $windowFacts['total_weeks'] = max(1, $windowStart->diffInWeeks($windowEnd) + 1);
+        $windowFacts['total_weeks'] = count($weeklyBuckets);
         $windowFacts['active_weeks'] = $activeWeeks;
         $windowFacts['active_days'] = $activeDays;
         $windowFacts['commits_count'] = $commitCount;

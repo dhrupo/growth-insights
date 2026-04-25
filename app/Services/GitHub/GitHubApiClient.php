@@ -8,6 +8,11 @@ use Illuminate\Http\Client\PendingRequest;
 
 class GitHubApiClient
 {
+    private const DEFAULT_PER_PAGE = 100;
+    private const REPOSITORY_MAX_PAGES = 3;
+    private const COMMIT_MAX_PAGES = 3;
+    private const SEARCH_MAX_PAGES = 3;
+
     public function __construct(private readonly Factory $http)
     {
     }
@@ -26,9 +31,9 @@ class GitHubApiClient
     {
         return $this->paginate(
             "/users/{$githubUsername}/repos",
-            ['sort' => 'updated', 'direction' => 'desc', 'type' => 'owner'],
+            ['sort' => 'updated', 'direction' => 'desc', 'type' => 'all'],
             null,
-            1,
+            self::REPOSITORY_MAX_PAGES,
         );
     }
 
@@ -38,7 +43,7 @@ class GitHubApiClient
             '/user/repos',
             ['sort' => 'updated', 'direction' => 'desc', 'visibility' => 'all', 'affiliation' => 'owner,collaborator'],
             $token,
-            1,
+            self::REPOSITORY_MAX_PAGES,
         );
     }
 
@@ -54,10 +59,10 @@ class GitHubApiClient
             [
                 'author' => $githubUsername,
                 'since' => $since->toIso8601String(),
-                'per_page' => 50,
+                'per_page' => self::DEFAULT_PER_PAGE,
             ],
             $token,
-            1,
+            self::COMMIT_MAX_PAGES,
         );
     }
 
@@ -99,13 +104,7 @@ class GitHubApiClient
 
     public function searchIssues(string $query, ?string $token = null): array
     {
-        $response = $this->pending($token)->get('/search/issues', [
-            'q' => $query,
-            'per_page' => 100,
-            'page' => 1,
-        ]);
-
-        return $response->throw()->json('items', []);
+        return $this->searchPaginated('/search/issues', $query, $token);
     }
 
     public function searchRepositories(
@@ -136,10 +135,11 @@ class GitHubApiClient
     private function paginate(string $path, array $query = [], ?string $token = null, int $maxPages = 3): array
     {
         $results = [];
+        $perPage = (int) ($query['per_page'] ?? self::DEFAULT_PER_PAGE);
 
         for ($page = 1; $page <= $maxPages; $page++) {
             $response = $this->pending($token)->get($path, $query + [
-                'per_page' => $query['per_page'] ?? 100,
+                'per_page' => $perPage,
                 'page' => $page,
             ]);
 
@@ -151,7 +151,34 @@ class GitHubApiClient
 
             $results = array_merge($results, $items);
 
-            if (count($items) < 100) {
+            if (count($items) < $perPage) {
+                break;
+            }
+        }
+
+        return $results;
+    }
+
+    private function searchPaginated(string $path, string $query, ?string $token = null, int $maxPages = self::SEARCH_MAX_PAGES): array
+    {
+        $results = [];
+
+        for ($page = 1; $page <= $maxPages; $page++) {
+            $response = $this->pending($token)->get($path, [
+                'q' => $query,
+                'per_page' => self::DEFAULT_PER_PAGE,
+                'page' => $page,
+            ]);
+
+            $items = $response->throw()->json('items', []);
+
+            if (! is_array($items) || $items === []) {
+                break;
+            }
+
+            $results = array_merge($results, $items);
+
+            if (count($items) < self::DEFAULT_PER_PAGE) {
                 break;
             }
         }
