@@ -48,43 +48,35 @@ const profileTitle = computed(() => {
     return 'Your GitHub profile';
 });
 
-const snapshotStats = computed(() => {
-    const summary = analysis.value.evidenceSummary ?? '';
-    const matches = [
-        { key: 'weeks', label: 'Active weeks', match: summary.match(/(\d+)\s+active weeks/i) },
-        { key: 'days', label: 'Active days', match: summary.match(/(\d+)\s+active days/i) },
-        { key: 'commits', label: 'Commits', match: summary.match(/(\d+)\s+commits/i) },
-        { key: 'prs', label: 'PRs', match: summary.match(/(\d+)\s+PRs/i) },
-    ];
-
-    return matches.map((item) => ({
-        key: item.key,
-        label: item.label,
-        value: item.match?.[1] ?? '0',
-    }));
+const snapshot = computed(() => analysis.value.snapshot ?? {
+    score: null,
+    confidence: null,
+    momentum: 'Stable',
+    languages: [],
+    activeWeeks: 0,
+    activeDays: 0,
+    commits: 0,
+    pullRequests: 0,
+    issues: 0,
 });
 
-const snapshotMeta = computed(() => {
-    const summary = analysis.value.evidenceSummary ?? '';
-    const rawScore = summary.match(/overall score\s+([\d.]+)/i)?.[1];
-
-    return {
-        score: rawScore ? (Number.parseFloat(rawScore) / 10).toFixed(1) : null,
-        confidence: summary.match(/confidence\s+([\d.]+)/i)?.[1] ?? null,
-        momentum: summary.match(/Momentum label:\s*([a-z-]+)/i)?.[1] ?? null,
-        languages: summary.match(/Top languages:\s*([^.]+)/i)?.[1]?.split(',').map((item) => item.trim()).filter(Boolean) ?? [],
-    };
+const snapshotStats = computed(() => {
+    return [
+        { key: 'weeks', label: 'Active weeks', value: String(snapshot.value.activeWeeks ?? 0) },
+        { key: 'days', label: 'Active days', value: String(snapshot.value.activeDays ?? 0) },
+        { key: 'commits', label: 'Commits', value: String(snapshot.value.commits ?? 0) },
+        { key: 'prs', label: 'PRs', value: String(snapshot.value.pullRequests ?? 0) },
+    ];
 });
 
 const snapshotNarrative = computed(() => {
-    const stats = Object.fromEntries(snapshotStats.value.map((item) => [item.key, item.value]));
-    const languageText = snapshotMeta.value.languages.length
-        ? snapshotMeta.value.languages.join(', ')
+    const languageText = snapshot.value.languages.length
+        ? snapshot.value.languages.join(', ')
         : 'the visible repository mix';
-    const momentumText = snapshotMeta.value.momentum ?? 'steady';
+    const momentumText = (snapshot.value.momentum ?? 'Stable').toLowerCase();
 
-    if (analysis.value.evidenceSummary) {
-        return `Over the last ${stats.weeks} active weeks, you showed up on ${stats.days} days, made ${stats.commits} commits, and opened ${stats.prs} pull requests. Your public work is showing the strongest signal in ${languageText}, and your recent pace looks ${momentumText}.`;
+    if (analysis.value.analysisRunId) {
+        return `Over the last ${snapshot.value.activeWeeks} active weeks, you showed up on ${snapshot.value.activeDays} days, made ${snapshot.value.commits} commits, and opened ${snapshot.value.pullRequests} pull requests. Your public work is showing the strongest signal in ${languageText}, and your recent pace looks ${momentumText}.`;
     }
 
     return '';
@@ -150,7 +142,7 @@ const scoreBreakdownOption = computed(() => ({
 const coverageHighlights = computed(() => [
     {
         label: 'Recent trend',
-        value: snapshotMeta.value.momentum ?? 'Stable',
+        value: snapshot.value.momentum ?? 'Stable',
         tone: 'text-blue-700',
     },
     {
@@ -163,8 +155,9 @@ const coverageHighlights = computed(() => [
 
 const trajectoryOption = computed(() => ({
     color: ['#2563eb', '#0f766e'],
-    tooltip: { trigger: 'axis' },
-    grid: { left: 20, right: 16, top: 16, bottom: 32 },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    legend: { bottom: 0, textStyle: { color: '#475569' } },
+    grid: { left: 20, right: 16, top: 16, bottom: 56 },
     xAxis: {
         type: 'category',
         data: trajectoryWindows.value.map((item) => item.label),
@@ -179,12 +172,10 @@ const trajectoryOption = computed(() => ({
     series: [
         {
             name: 'Score',
-            type: 'line',
-            smooth: true,
-            symbolSize: 7,
+            type: 'bar',
+            barWidth: 18,
             data: trajectoryWindows.value.map((item) => Number((Number(item.score || 0) / 10).toFixed(1))),
-            lineStyle: { width: 3 },
-            areaStyle: { color: 'rgba(37, 99, 235, 0.12)' },
+            itemStyle: { color: 'rgba(37, 99, 235, 0.85)', borderRadius: [8, 8, 0, 0] },
         },
         {
             name: 'Confidence',
@@ -241,19 +232,19 @@ onMounted(async () => {
                     </div>
                 </div>
 
-                <div v-if="analysis.evidenceSummary" class="mt-5 overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.14),_transparent_42%),linear-gradient(135deg,#0f172a_0%,#172554_100%)] px-4 py-4 text-white shadow-[0_24px_48px_-28px_rgba(15,23,42,0.9)]">
+                <div v-if="analysis.analysisRunId" class="mt-5 overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.14),_transparent_42%),linear-gradient(135deg,#0f172a_0%,#172554_100%)] px-4 py-4 text-white shadow-[0_24px_48px_-28px_rgba(15,23,42,0.9)]">
                     <div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
                         <div class="max-w-2xl">
                             <p class="text-xs font-semibold uppercase tracking-[0.28em] text-slate-300">Quick read</p>
                             <h3 class="mt-3 text-2xl font-semibold tracking-tight text-white">
-                                {{ snapshotMeta.score ? `${snapshotMeta.score}/10` : 'Live profile read' }}
+                                {{ snapshot.score !== null ? `${snapshot.score.toFixed(1)}/10` : 'Live profile read' }}
                             </h3>
                             <p class="mt-2 max-w-2xl text-sm leading-7 text-slate-200">
                                 {{ snapshotNarrative }}
                             </p>
                             <div class="mt-4 flex flex-wrap gap-2">
                                 <span
-                                    v-for="language in snapshotMeta.languages"
+                                    v-for="language in snapshot.languages"
                                     :key="language"
                                     class="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-medium text-slate-100"
                                 >
@@ -265,11 +256,11 @@ onMounted(async () => {
                         <div class="grid min-w-0 gap-3 sm:grid-cols-3 xl:w-[340px] xl:grid-cols-1">
                             <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
                                 <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">Recent trend</p>
-                                <p class="mt-2 text-lg font-semibold text-white">{{ snapshotMeta.momentum ?? 'Stable' }}</p>
+                                <p class="mt-2 text-lg font-semibold text-white">{{ snapshot.momentum ?? 'Stable' }}</p>
                             </div>
                             <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
                                 <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">How complete this view is</p>
-                                <p class="mt-2 text-lg font-semibold text-white">{{ snapshotMeta.confidence ? `${snapshotMeta.confidence}%` : 'Not scored' }}</p>
+                                <p class="mt-2 text-lg font-semibold text-white">{{ snapshot.confidence !== null ? `${snapshot.confidence}%` : 'Not scored' }}</p>
                             </div>
                             <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
                                 <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">Main strength</p>
@@ -393,10 +384,11 @@ onMounted(async () => {
 
             <section class="grid items-start gap-6 xl:grid-cols-[1.25fr_1fr]">
                 <SurfaceCard
+                    class="h-[680px]"
                     title="Repositories used for this report"
                     description="These are the repositories that contributed most to the current result."
                 >
-                    <div class="space-y-3">
+                    <div class="h-full space-y-3 overflow-y-auto pr-1">
                         <article
                             v-for="repo in analyzedRepositories"
                             :key="repo.fullName || repo.name"
@@ -434,6 +426,7 @@ onMounted(async () => {
                 </SurfaceCard>
 
                 <SurfaceCard
+                    class="h-[680px]"
                     title="What stands out in your GitHub profile"
                     description="A simple read on your style of work and the strongest visible skill signals."
                 >
@@ -735,8 +728,8 @@ onMounted(async () => {
             <section class="grid items-stretch gap-6 xl:grid-cols-2">
                 <SurfaceCard
                     class="h-full"
-                    title="Trajectory"
-                    description="How your GitHub profile has been changing over time, and what that may lead to if you keep going."
+                    title="Window comparison"
+                    description="How this profile reads across nested analysis windows, rather than a week-by-week forecast."
                 >
                     <AsyncEChart :option="trajectoryOption" height="280px" />
                     <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -855,7 +848,7 @@ onMounted(async () => {
 
                         <div class="rounded-2xl border border-slate-200 bg-white p-4">
                             <p class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Big picture</p>
-                            <p class="mt-3 text-sm leading-6 text-slate-700">{{ analysis.trajectory.outlook || 'Trajectory becomes clearer as more windows and reviewable activity accumulate.' }}</p>
+                            <p class="mt-3 text-sm leading-6 text-slate-700">{{ analysis.trajectory.outlook || 'Window comparisons become clearer as more reviewable activity accumulates.' }}</p>
                         </div>
                     </div>
                 </SurfaceCard>

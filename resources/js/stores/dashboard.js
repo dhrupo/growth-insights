@@ -37,6 +37,7 @@ const mergeAnalysisResponse = (baseAnalysis, payload, username = '') => {
         ? payload.summary
         : analysis.summary;
     analysis.evidenceSummary = payload?.evidenceSummary ?? analysis.evidenceSummary ?? null;
+    analysis.snapshot = payload?.snapshot ?? analysis.snapshot;
     analysis.weeklyPlan = Array.isArray(payload?.weeklyPlan) ? payload.weeklyPlan : (analysis.weeklyPlan ?? []);
     analysis.thirtyDayPlan = Array.isArray(payload?.thirtyDayPlan) ? payload.thirtyDayPlan : (analysis.thirtyDayPlan ?? []);
     analysis.connection = payload?.connection
@@ -108,6 +109,17 @@ const emptyAnalysis = () => ({
     status: 'idle',
     lastAnalyzedAt: null,
     evidenceSummary: null,
+    snapshot: {
+        score: null,
+        confidence: null,
+        momentum: 'Stable',
+        languages: [],
+        activeWeeks: 0,
+        activeDays: 0,
+        commits: 0,
+        pullRequests: 0,
+        issues: 0,
+    },
     weeklyPlan: [],
     thirtyDayPlan: [],
     profile: {
@@ -391,6 +403,7 @@ export const useDashboardStore = defineStore('dashboard', {
                         key: slice.key,
                         value: normalized ?? clone(slice.fallback),
                         live: Boolean(normalized),
+                        error: response?.error ?? (!normalized ? { message: `${slice.key} data was unavailable.` } : null),
                         apply: slice.apply,
                     };
                 }),
@@ -401,17 +414,23 @@ export const useDashboardStore = defineStore('dashboard', {
             }
 
             let liveSlices = 0;
+            const sliceErrors = [];
 
             settled.forEach((result) => {
                 if (result.status !== 'fulfilled') {
+                    sliceErrors.push({ message: 'A dashboard request failed unexpectedly.' });
                     return;
                 }
 
-                const { value, live, apply } = result.value;
+                const { value, live, error, apply } = result.value;
                 apply(this, value);
 
                 if (live) {
                     liveSlices += 1;
+                }
+
+                if (error) {
+                    sliceErrors.push(error);
                 }
             });
 
@@ -425,7 +444,11 @@ export const useDashboardStore = defineStore('dashboard', {
             this.lastSyncedAt = new Date().toISOString();
             this.error = liveSlices === 0
                 ? 'No dashboard slices were returned for the selected analysis yet.'
-                : null;
+                : (
+                    sliceErrors.length > 0
+                        ? `${sliceErrors.length} dashboard section${sliceErrors.length > 1 ? 's were' : ' was'} unavailable.`
+                        : null
+                );
 
             return this;
         },
@@ -472,9 +495,23 @@ export const useDashboardStore = defineStore('dashboard', {
             const responseError = payload?.error ?? null;
 
             if (!responsePayload) {
-                this.analysisStatus = 'idle';
-                this.analysisError = responseError?.message ?? null;
-                this.resetAnalysisState();
+                this.analysis = {
+                    ...emptyAnalysis(),
+                };
+                this.summary = [];
+                this.timeline = emptyTimeline();
+                this.acquisitionMix = emptyAcquisitionMix();
+                this.strengths = [];
+                this.weaknesses = [];
+                this.recommendations = [];
+                this.simulator = emptySimulator();
+                this.dataSource = 'empty';
+                this.status = 'idle';
+                this.lastSyncedAt = null;
+                this.error = null;
+                this.analysisStatus = 'error';
+                this.analysisError = responseError?.message ?? 'Unable to load the latest analysis state.';
+                this.hasAutoStartedAnalysis = false;
                 return null;
             }
 

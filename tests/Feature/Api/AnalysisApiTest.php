@@ -194,7 +194,8 @@ class AnalysisApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.analysisRunId', null)
             ->assertJsonPath('data.connection.connected', false)
-            ->assertJsonPath('data.profile.username', '');
+            ->assertJsonPath('data.profile.username', '')
+            ->assertJsonPath('data.snapshot.score', null);
     }
 
     public function test_connection_routes_require_the_current_session_connection(): void
@@ -351,6 +352,7 @@ class AnalysisApiTest extends TestCase
             ->assertJsonStructure([
                 'data' => [
                     'analysisRunId',
+                    'snapshot' => ['score', 'confidence', 'momentum', 'languages', 'activeWeeks', 'activeDays', 'commits', 'pullRequests', 'issues'],
                     'thirtyDayPlan',
                     'skillSignals',
                     'improvementActions',

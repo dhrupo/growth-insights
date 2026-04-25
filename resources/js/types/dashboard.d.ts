@@ -176,6 +176,18 @@ export interface GithubTrajectorySummary {
     confidence: string;
 }
 
+export interface GithubAnalysisSnapshot {
+    score: number | null;
+    confidence: number | null;
+    momentum: string;
+    languages: string[];
+    activeWeeks: number;
+    activeDays: number;
+    commits: number;
+    pullRequests: number;
+    issues: number;
+}
+
 export interface GithubImprovementAction {
     title: string;
     detail: string;
@@ -190,6 +202,7 @@ export interface GithubAnalysisWorkbench {
     status: DashboardAnalysisStatus;
     lastAnalyzedAt?: string | null;
     evidenceSummary?: string | null;
+    snapshot?: GithubAnalysisSnapshot;
     weeklyPlan?: DashboardWeeklyPlanItem[];
     thirtyDayPlan?: DashboardThirtyDayPlanItem[];
     profile: GithubAnalysisProfile;

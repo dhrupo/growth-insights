@@ -163,7 +163,7 @@ export function useDashboardInsights() {
     });
 
     const trendOption = computed(() => buildTrendOption(store.timeline));
-    const segmentOption = computed(() => buildSegmentOption(store.strengths, store.weaknesses));
+    const segmentOption = computed(() => buildSegmentOption(store.analysis.strengths ?? [], store.analysis.weaknesses ?? []));
     const simulatorOption = computed(() => buildSimulatorOption(store.simulator));
 
     const refresh = async () => {
@@ -184,9 +184,9 @@ export function useDashboardInsights() {
         trendOption,
         segmentOption,
         simulatorOption,
-        strengths: computed(() => store.strengths),
-        weaknesses: computed(() => store.weaknesses),
-        recommendations: computed(() => store.recommendations),
+        strengths: computed(() => store.analysis.strengths ?? []),
+        weaknesses: computed(() => store.analysis.weaknesses ?? []),
+        recommendations: computed(() => store.analysis.recommendations ?? []),
         simulator: computed(() => store.simulator),
         refresh,
         isLoading: computed(() => store.isLoading),

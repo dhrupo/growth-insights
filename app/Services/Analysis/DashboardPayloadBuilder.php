@@ -199,6 +199,7 @@ class DashboardPayloadBuilder
                 $enhancement['summary'] ?? null,
             ])),
             'evidenceSummary' => $run->evidence_summary,
+            'snapshot' => $this->snapshotPayload($run, $context),
             'weeklyPlan' => collect($run->weekly_plan ?? [])->map(function (array $item) use ($mergedWeeklyPlan): array {
                 $notes = $mergedWeeklyPlan;
                 $aiNote = $notes->firstWhere('day', $item['day'])['ai_note']
@@ -335,6 +336,17 @@ class DashboardPayloadBuilder
             ],
             'summary' => [],
             'evidenceSummary' => null,
+            'snapshot' => [
+                'score' => null,
+                'confidence' => null,
+                'momentum' => 'Stable',
+                'languages' => [],
+                'activeWeeks' => 0,
+                'activeDays' => 0,
+                'commits' => 0,
+                'pullRequests' => 0,
+                'issues' => 0,
+            ],
             'weeklyPlan' => [],
             'thirtyDayPlan' => [],
             'connection' => $this->connectionState($connection, $username),
@@ -385,6 +397,29 @@ class DashboardPayloadBuilder
             'impact' => $this->scoreImpactLabel((float) ($item['score'] ?? 0)),
             'priority' => ((float) ($item['score'] ?? 0)) >= 70 ? 'high' : 'medium',
         ])->all();
+    }
+
+    private function snapshotPayload(AnalysisRun $run, array $context): array
+    {
+        $activity = $context['activity'] ?? [];
+        $languages = collect(data_get($context, 'languages.shares', []))
+            ->sortDesc()
+            ->keys()
+            ->take(3)
+            ->values()
+            ->all();
+
+        return [
+            'score' => (float) $this->formatScore((float) $run->overall_score),
+            'confidence' => round((float) $run->confidence),
+            'momentum' => ucfirst((string) ($run->momentum_label ?: 'stable')),
+            'languages' => $languages,
+            'activeWeeks' => (int) ($activity['active_weeks'] ?? 0),
+            'activeDays' => (int) ($activity['active_days'] ?? 0),
+            'commits' => (int) ($activity['commits_count'] ?? 0),
+            'pullRequests' => (int) ($activity['pull_requests_count'] ?? 0),
+            'issues' => (int) ($activity['issues_count'] ?? 0),
+        ];
     }
 
     private function topSkillLabel(Collection $signals): string
