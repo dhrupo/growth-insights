@@ -117,6 +117,7 @@ class GitHubAuthController extends Controller
                 ],
             );
 
+            $request->session()->regenerate();
             $request->session()->put('github.current_connection_id', $connection->id);
             $request->session()->put('github.current_username', $resolvedUsername);
             $request->session()->save();

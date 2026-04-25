@@ -3,13 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\AnalysisRun;
+use App\Services\Analysis\AnalysisAccessService;
 use App\Services\Analysis\DashboardPayloadBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class DashboardController extends ApiController
 {
-    public function __construct(private readonly DashboardPayloadBuilder $payloadBuilder)
+    public function __construct(
+        private readonly DashboardPayloadBuilder $payloadBuilder,
+        private readonly AnalysisAccessService $analysisAccessService,
+    )
     {
     }
 
@@ -59,18 +63,6 @@ class DashboardController extends ApiController
 
     private function resolveRun(Request $request): ?AnalysisRun
     {
-        $query = AnalysisRun::query()
-            ->where('status', 'completed')
-            ->with(['metricSnapshot', 'weeklyBuckets', 'skillSignals', 'recommendations']);
-
-        if ($request->filled('analysis_run_id')) {
-            return $query->find($request->integer('analysis_run_id'));
-        }
-
-        if ($request->filled('github_username')) {
-            $query->where('github_username', $request->string('github_username')->toString());
-        }
-
-        return $query->latest('completed_at')->latest('id')->first();
+        return $this->analysisAccessService->resolveDashboardRun($request);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Services\Analysis\AnalysisAccessService;
 use App\Services\Analysis\DashboardPayloadBuilder;
 use App\Services\Analysis\GrowthAnalysisService;
 use App\Models\GitHubConnection;
@@ -14,10 +15,11 @@ class DashboardGitHubController extends ApiController
 {
     public function currentAnalysis(
         Request $request,
+        AnalysisAccessService $analysisAccessService,
         GrowthAnalysisService $growthAnalysisService,
         DashboardPayloadBuilder $payloadBuilder,
     ): JsonResponse {
-        $connection = $this->currentConnection($request, $growthAnalysisService);
+        $connection = $analysisAccessService->currentConnection($request);
         $run = $connection ? $growthAnalysisService->latestForConnection($connection) : null;
 
         return $this->json($payloadBuilder->currentSession($connection, $run));
@@ -25,6 +27,7 @@ class DashboardGitHubController extends ApiController
 
     public function syncCurrentAnalysis(
         Request $request,
+        AnalysisAccessService $analysisAccessService,
         GrowthAnalysisService $growthAnalysisService,
         DashboardPayloadBuilder $payloadBuilder,
     ): JsonResponse {
@@ -32,7 +35,7 @@ class DashboardGitHubController extends ApiController
             @set_time_limit(90);
         }
 
-        $connection = $this->currentConnection($request, $growthAnalysisService);
+        $connection = $analysisAccessService->currentConnection($request);
 
         if ($connection === null) {
             return response()->json([
@@ -50,18 +53,24 @@ class DashboardGitHubController extends ApiController
     }
 
     public function latestAnalysis(
+        Request $request,
         string $githubUsername,
+        AnalysisAccessService $analysisAccessService,
         GrowthAnalysisService $growthAnalysisService,
         DashboardPayloadBuilder $payloadBuilder,
     ): JsonResponse {
-        $run = $growthAnalysisService->latestForUsername($githubUsername);
-        $connection = $growthAnalysisService->connectionForUsername($githubUsername);
+        $run = $analysisAccessService->latestAccessibleRunForUsername($request, $githubUsername);
+        $connection = $analysisAccessService->currentConnection($request);
+
+        if ($connection !== null && $connection->github_username !== $githubUsername) {
+            $connection = null;
+        }
 
         if ($run === null) {
             return $this->notFound('No analysis run found for this GitHub username.');
         }
 
-        return $this->json($payloadBuilder->workbench($run, $connection ?? $run->githubConnection));
+        return $this->json($payloadBuilder->workbench($run, $connection));
     }
 
     public function publicAnalysis(
@@ -99,33 +108,4 @@ class DashboardGitHubController extends ApiController
         ], $status);
     }
 
-    private function currentConnection(Request $request, GrowthAnalysisService $growthAnalysisService): ?GitHubConnection
-    {
-        $connectionId = $request->session()->get('github.current_connection_id');
-
-        if ($connectionId) {
-            $connection = GitHubConnection::query()->find($connectionId);
-
-            if ($connection !== null) {
-                return $connection;
-            }
-        }
-
-        $githubUsername = (string) $request->session()->get('github.current_username', '');
-
-        if ($githubUsername === '') {
-            return GitHubConnection::query()
-                ->whereNotNull('access_token')
-                ->latest('connected_at')
-                ->latest('id')
-                ->first();
-        }
-
-        return $growthAnalysisService->connectionForUsername($githubUsername)
-            ?? GitHubConnection::query()
-                ->whereNotNull('access_token')
-                ->latest('connected_at')
-                ->latest('id')
-                ->first();
-    }
 }

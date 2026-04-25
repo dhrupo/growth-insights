@@ -6,25 +6,34 @@ use App\Http\Controllers\Api\DashboardGitHubController;
 use App\Http\Controllers\Api\GitHubConnectionController;
 use Illuminate\Support\Facades\Route;
 
-Route::prefix('dashboard')->group(function (): void {
+$sessionMiddleware = [
+    \Illuminate\Cookie\Middleware\EncryptCookies::class,
+    \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+    \Illuminate\Session\Middleware\StartSession::class,
+];
+
+Route::middleware($sessionMiddleware)->prefix('dashboard')->group(function (): void {
     Route::get('summary', [DashboardController::class, 'summary'])->name('dashboard.summary');
     Route::get('timeline', [DashboardController::class, 'timeline'])->name('dashboard.timeline');
     Route::get('insights', [DashboardController::class, 'insights'])->name('dashboard.insights');
     Route::get('simulator', [DashboardController::class, 'simulator'])->name('dashboard.simulator');
     Route::get('github/latest-analysis/{githubUsername}', [DashboardGitHubController::class, 'latestAnalysis'])->name('dashboard.github.latest-analysis');
+});
+
+Route::prefix('dashboard')->group(function (): void {
     Route::post('github/public-analysis', [DashboardGitHubController::class, 'publicAnalysis'])->name('dashboard.github.public-analysis');
 });
 
 Route::post('analysis/public', [AnalysisController::class, 'storePublic'])
     ->name('analysis.public.store');
 
-Route::get('analysis/latest/by-username/{githubUsername}', [AnalysisController::class, 'latestByUsername'])
+Route::middleware($sessionMiddleware)->get('analysis/latest/by-username/{githubUsername}', [AnalysisController::class, 'latestByUsername'])
     ->name('analysis.latest.by-username');
 
 Route::post('analysis/simulations', [AnalysisController::class, 'simulate'])
     ->name('analysis.simulations.store');
 
-Route::prefix('github')->group(function (): void {
+Route::middleware($sessionMiddleware)->prefix('github')->group(function (): void {
     Route::post('connections/{githubConnection}/sync', [GitHubConnectionController::class, 'sync'])
         ->name('github.connections.sync');
 
@@ -32,7 +41,7 @@ Route::prefix('github')->group(function (): void {
         ->name('github.connections.analysis.latest');
 });
 
-Route::prefix('analysis')->group(function (): void {
+Route::middleware($sessionMiddleware)->prefix('analysis')->group(function (): void {
     Route::get('{analysisRun}', [AnalysisController::class, 'show'])
         ->name('analysis.show');
 

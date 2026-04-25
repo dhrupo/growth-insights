@@ -92,7 +92,12 @@ class AnalysisApiTest extends TestCase
 
         Http::fake($this->analysisHttpFake($this->privateGitHubFake(), $this->geminiFakeResponse()));
 
-        $syncResponse = $this->postJson("/api/github/connections/{$connection->id}/sync");
+        $session = [
+            'github.current_connection_id' => $connection->id,
+            'github.current_username' => 'octocat',
+        ];
+
+        $syncResponse = $this->withSession($session)->postJson("/api/github/connections/{$connection->id}/sync");
 
         $syncResponse
             ->assertOk()
@@ -104,12 +109,12 @@ class AnalysisApiTest extends TestCase
         $this->assertSame('complete', $connection->sync_status);
         $this->assertNotNull($connection->last_synced_at);
 
-        $latestByConnection = $this->getJson("/api/github/connections/{$connection->id}/analysis/latest");
+        $latestByConnection = $this->withSession($session)->getJson("/api/github/connections/{$connection->id}/analysis/latest");
         $latestByConnection
             ->assertOk()
             ->assertJsonPath('data.github_connection_id', $connection->id);
 
-        $latestByUsername = $this->getJson('/api/analysis/latest/by-username/octocat');
+        $latestByUsername = $this->withSession($session)->getJson('/api/analysis/latest/by-username/octocat');
         $latestByUsername
             ->assertOk()
             ->assertJsonPath('data.github_username', 'octocat');
@@ -141,13 +146,17 @@ class AnalysisApiTest extends TestCase
     public function test_dashboard_endpoints_reshape_latest_analysis_for_frontend_consumption(): void
     {
         Http::fake($this->analysisHttpFake($this->publicGitHubFake(), $this->geminiFakeResponse()));
-        $this->postJson('/api/analysis/public', ['github_username' => 'octocat'])->assertCreated();
+        $runId = $this->postJson('/api/analysis/public', ['github_username' => 'octocat'])
+            ->assertCreated()
+            ->json('data.id');
 
-        $this->getJson('/api/dashboard/summary')
+        $query = http_build_query(['analysis_run_id' => $runId]);
+
+        $this->getJson('/api/dashboard/summary?'.$query)
             ->assertOk()
             ->assertJsonCount(4, 'data.metrics');
 
-        $this->getJson('/api/dashboard/timeline')
+        $this->getJson('/api/dashboard/timeline?'.$query)
             ->assertOk()
             ->assertJsonStructure([
                 'data' => [
@@ -156,7 +165,7 @@ class AnalysisApiTest extends TestCase
                 ],
             ]);
 
-        $this->getJson('/api/dashboard/insights')
+        $this->getJson('/api/dashboard/insights?'.$query)
             ->assertOk()
             ->assertJsonStructure([
                 'data' => [
@@ -167,7 +176,7 @@ class AnalysisApiTest extends TestCase
                 ],
             ]);
 
-        $this->getJson('/api/dashboard/simulator')
+        $this->getJson('/api/dashboard/simulator?'.$query)
             ->assertOk()
             ->assertJsonStructure([
                 'data' => [
@@ -181,6 +190,128 @@ class AnalysisApiTest extends TestCase
 
     public function test_dashboard_current_analysis_returns_empty_state_without_connection(): void
     {
+        $this->getJson('/api/dashboard/github/current-analysis')
+            ->assertOk()
+            ->assertJsonPath('data.analysisRunId', null)
+            ->assertJsonPath('data.connection.connected', false)
+            ->assertJsonPath('data.profile.username', '');
+    }
+
+    public function test_connection_routes_require_the_current_session_connection(): void
+    {
+        $ownerConnection = GitHubConnection::create([
+            'user_id' => User::factory()->create()->id,
+            'github_username' => 'octocat',
+            'analysis_mode' => 'public_private',
+            'access_token' => 'ghp_test_private_token_value',
+            'sync_status' => 'idle',
+            'connected_at' => now()->subDay(),
+        ]);
+
+        $otherConnection = GitHubConnection::create([
+            'user_id' => User::factory()->create()->id,
+            'github_username' => 'monalisa',
+            'analysis_mode' => 'public_private',
+            'access_token' => 'ghp_other_private_token_value',
+            'sync_status' => 'idle',
+            'connected_at' => now()->subHours(12),
+        ]);
+
+        Http::fake($this->analysisHttpFake($this->privateGitHubFake(), $this->geminiFakeResponse()));
+
+        $this->postJson("/api/github/connections/{$ownerConnection->id}/sync")
+            ->assertNotFound();
+
+        $this->withSession([
+            'github.current_connection_id' => $otherConnection->id,
+            'github.current_username' => 'monalisa',
+        ])->postJson("/api/github/connections/{$ownerConnection->id}/sync")
+            ->assertNotFound();
+    }
+
+    public function test_private_analysis_routes_are_not_publicly_accessible(): void
+    {
+        $connection = GitHubConnection::create([
+            'user_id' => null,
+            'github_username' => 'octocat',
+            'analysis_mode' => 'public_private',
+            'access_token' => 'ghp_test_private_token_value',
+            'sync_status' => 'complete',
+            'connected_at' => now()->subDay(),
+            'last_synced_at' => now()->subHour(),
+        ]);
+
+        $privateRun = AnalysisRun::create([
+            'github_connection_id' => $connection->id,
+            'github_username' => 'octocat',
+            'analysis_mode' => 'public_private',
+            'status' => 'completed',
+            'source_window_start' => now()->subDays(55)->toDateString(),
+            'source_window_end' => now()->toDateString(),
+            'started_at' => now()->subMinutes(5),
+            'completed_at' => now()->subMinute(),
+            'overall_score' => 82.5,
+            'confidence' => 88,
+            'momentum_label' => 'growing',
+            'weekly_plan' => [],
+            'context' => [
+                'repositories' => [
+                    [
+                        'full_name' => 'octocat/private-engine',
+                        'visibility' => 'private',
+                    ],
+                ],
+            ],
+            'summary' => 'Private analysis run.',
+            'evidence_summary' => 'Private evidence.',
+        ]);
+
+        $this->getJson('/api/analysis/latest/by-username/octocat')
+            ->assertNotFound();
+
+        $this->getJson("/api/analysis/{$privateRun->id}")
+            ->assertNotFound();
+
+        $this->getJson("/api/analysis/{$privateRun->id}/timeline")
+            ->assertNotFound();
+
+        $this->getJson("/api/analysis/{$privateRun->id}/recommendations")
+            ->assertNotFound();
+
+        $this->getJson('/api/dashboard/github/latest-analysis/octocat')
+            ->assertNotFound();
+    }
+
+    public function test_current_analysis_does_not_fall_back_to_another_users_connection(): void
+    {
+        $connection = GitHubConnection::create([
+            'user_id' => null,
+            'github_username' => 'octocat',
+            'analysis_mode' => 'public_private',
+            'access_token' => 'ghp_test_private_token_value',
+            'sync_status' => 'complete',
+            'connected_at' => now()->subDay(),
+            'last_synced_at' => now()->subHour(),
+        ]);
+
+        AnalysisRun::create([
+            'github_connection_id' => $connection->id,
+            'github_username' => 'octocat',
+            'analysis_mode' => 'public_private',
+            'status' => 'completed',
+            'source_window_start' => now()->subDays(55)->toDateString(),
+            'source_window_end' => now()->toDateString(),
+            'started_at' => now()->subMinutes(5),
+            'completed_at' => now()->subMinute(),
+            'overall_score' => 82.5,
+            'confidence' => 88,
+            'momentum_label' => 'growing',
+            'weekly_plan' => [],
+            'context' => [],
+            'summary' => 'Private analysis run.',
+            'evidence_summary' => 'Private evidence.',
+        ]);
+
         $this->getJson('/api/dashboard/github/current-analysis')
             ->assertOk()
             ->assertJsonPath('data.analysisRunId', null)
