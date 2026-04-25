@@ -143,6 +143,38 @@ class AnalysisApiTest extends TestCase
         $this->assertGreaterThan(64, (float) $response->json('data.projected_score'));
     }
 
+    public function test_public_analysis_validates_the_github_username(): void
+    {
+        $this->postJson('/api/analysis/public', [
+            'github_username' => 'octo cat',
+        ])->assertUnprocessable();
+    }
+
+    public function test_simulation_validates_out_of_range_inputs(): void
+    {
+        $this->postJson('/api/analysis/simulations', [
+            'current_score' => 140,
+            'current_consistency_score' => 60,
+            'current_diversity_score' => 52,
+            'current_contribution_score' => 58,
+        ])->assertUnprocessable();
+    }
+
+    public function test_public_analysis_maps_rate_limit_failures_to_a_user_facing_response(): void
+    {
+        Http::fake([
+            'https://api.github.com/users/octocat' => Http::response([
+                'message' => 'API rate limit exceeded for this user.',
+            ], 403),
+        ]);
+
+        $this->postJson('/api/analysis/public', [
+            'github_username' => 'octocat',
+        ])
+            ->assertStatus(429)
+            ->assertJsonPath('message', 'GitHub rate limited this analysis request. Connect GitHub or try again later.');
+    }
+
     public function test_dashboard_endpoints_reshape_latest_analysis_for_frontend_consumption(): void
     {
         Http::fake($this->analysisHttpFake($this->publicGitHubFake(), $this->geminiFakeResponse()));
@@ -228,6 +260,36 @@ class AnalysisApiTest extends TestCase
             'github.current_username' => 'monalisa',
         ])->postJson("/api/github/connections/{$ownerConnection->id}/sync")
             ->assertNotFound();
+    }
+
+    public function test_connection_sync_marks_the_connection_as_failed_when_github_errors(): void
+    {
+        $connection = GitHubConnection::create([
+            'user_id' => User::factory()->create()->id,
+            'github_username' => 'octocat',
+            'analysis_mode' => 'public_private',
+            'access_token' => 'ghp_test_private_token_value',
+            'sync_status' => 'idle',
+            'connected_at' => now()->subDay(),
+        ]);
+
+        Http::fake([
+            'https://api.github.com/user' => Http::response([
+                'message' => 'GitHub is unavailable.',
+            ], 503),
+        ]);
+
+        $this->withSession([
+            'github.current_connection_id' => $connection->id,
+            'github.current_username' => 'octocat',
+        ])->postJson("/api/github/connections/{$connection->id}/sync")
+            ->assertStatus(503)
+            ->assertJsonPath('message', 'GitHub is unavailable.');
+
+        $connection->refresh();
+
+        $this->assertSame('failed', $connection->sync_status);
+        $this->assertSame('GitHub is unavailable.', $connection->sync_error);
     }
 
     public function test_private_analysis_routes_are_not_publicly_accessible(): void

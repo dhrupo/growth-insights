@@ -6,6 +6,7 @@ use App\Http\Resources\AnalysisRunResource;
 use App\Models\GitHubConnection;
 use App\Services\Analysis\AnalysisAccessService;
 use App\Services\Analysis\GrowthAnalysisService;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,7 +23,11 @@ class GitHubConnectionController extends ApiController
             return $this->notFound('No analysis run found for this GitHub connection.');
         }
 
-        $analysis = $growthAnalysisService->syncConnection($githubConnection);
+        try {
+            $analysis = $growthAnalysisService->syncConnection($githubConnection);
+        } catch (RequestException $exception) {
+            return $this->upstreamFailure($exception, 'GitHub analysis failed.');
+        }
 
         return $this->resource(AnalysisRunResource::make($analysis));
     }

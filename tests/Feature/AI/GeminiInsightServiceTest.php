@@ -157,6 +157,49 @@ class GeminiInsightServiceTest extends TestCase
         $this->assertSame('Fallback model succeeded.', $result['summary']);
     }
 
+    public function test_it_falls_back_when_the_cached_snapshot_payload_is_corrupted(): void
+    {
+        config(['services.gemini.api_key' => 'test-gemini-key']);
+
+        $service = app(GeminiInsightService::class);
+        $facts = $this->analysisFacts();
+        $snapshotHash = $service->snapshotHash($facts);
+
+        Cache::put("gemini:analysis:{$snapshotHash}", 'corrupted-cache-value', now()->addMinutes(10));
+
+        $result = $service->enhance($facts);
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('cache_corrupted', $result['error']);
+    }
+
+    public function test_it_falls_back_when_gemini_returns_malformed_json(): void
+    {
+        config(['services.gemini.api_key' => 'test-gemini-key']);
+
+        Http::fake([
+            'https://generativelanguage.googleapis.com/v1beta/models/*:generateContent' => Http::response([
+                'candidates' => [
+                    [
+                        'content' => [
+                            'parts' => [
+                                [
+                                    'text' => 'not-json',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ]),
+        ]);
+
+        $service = app(GeminiInsightService::class);
+        $result = $service->enhance($this->analysisFacts());
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame('Gemini response was not valid JSON.', $result['error']);
+    }
+
     private function analysisFacts(): array
     {
         return [

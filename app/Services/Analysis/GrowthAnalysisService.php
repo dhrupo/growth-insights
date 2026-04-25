@@ -11,6 +11,7 @@ use App\Models\SkillSignal;
 use App\Services\AI\GeminiInsightService;
 use App\Services\GitHub\GitHubApiClient;
 use Carbon\Carbon;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -41,12 +42,23 @@ class GrowthAnalysisService
     {
         $token = $connection->access_token;
 
-        return $this->analyze(
-            githubUsername: $connection->github_username,
-            token: $token,
-            connection: $connection,
-            analysisMode: $connection->analysis_mode ?: 'public_private',
-        );
+        try {
+            return $this->analyze(
+                githubUsername: $connection->github_username,
+                token: $token,
+                connection: $connection,
+                analysisMode: $connection->analysis_mode ?: 'public_private',
+            );
+        } catch (RequestException $exception) {
+            $connection->forceFill([
+                'sync_status' => 'failed',
+                'sync_error' => $exception->response?->json('message')
+                    ?? $exception->response?->json('error')
+                    ?? $exception->getMessage(),
+            ])->save();
+
+            throw $exception;
+        }
     }
 
     public function latestForUsername(string $githubUsername): ?AnalysisRun

@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Services\Analysis\AnalysisAccessService;
 use App\Services\Analysis\DashboardPayloadBuilder;
 use App\Services\Analysis\GrowthAnalysisService;
-use App\Models\GitHubConnection;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -90,22 +89,4 @@ class DashboardGitHubController extends ApiController
 
         return $this->json($payloadBuilder->workbench($run));
     }
-
-    private function upstreamFailure(RequestException $exception, string $fallbackMessage): JsonResponse
-    {
-        $status = $exception->response?->status() ?? Response::HTTP_BAD_GATEWAY;
-        $message = $exception->response?->json('message')
-            ?? $exception->response?->json('error')
-            ?? $fallbackMessage;
-
-        if ($status === Response::HTTP_FORBIDDEN && str_contains(strtolower($message), 'rate limit')) {
-            $status = Response::HTTP_TOO_MANY_REQUESTS;
-            $message = 'GitHub rate limited this analysis request. Connect GitHub or try again later.';
-        }
-
-        return response()->json([
-            'message' => $message,
-        ], $status);
-    }
-
 }

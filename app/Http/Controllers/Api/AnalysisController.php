@@ -11,6 +11,7 @@ use App\Models\AnalysisRun;
 use App\Services\Analysis\AnalysisAccessService;
 use App\Services\Analysis\GrowthAnalysisService;
 use App\Services\Analysis\ScoreSimulationService;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -18,7 +19,11 @@ class AnalysisController extends ApiController
 {
     public function storePublic(StartPublicAnalysisRequest $request, GrowthAnalysisService $growthAnalysisService): JsonResponse
     {
-        $analysis = $growthAnalysisService->analyzePublicUsername($request->validated('github_username'));
+        try {
+            $analysis = $growthAnalysisService->analyzePublicUsername($request->validated('github_username'));
+        } catch (RequestException $exception) {
+            return $this->upstreamFailure($exception, 'Public GitHub analysis failed.');
+        }
 
         return $this->resource(AnalysisRunResource::make($analysis), 201);
     }
