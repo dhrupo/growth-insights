@@ -201,28 +201,28 @@ onMounted(async () => {
                 title="Profile analysis"
                 description="Connect GitHub first, then analyze the account you authorized."
             >
-                <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                <div class="flex flex-col gap-4 sm:gap-5 lg:flex-row lg:items-end lg:justify-between">
                     <div class="min-w-0">
                         <p class="text-sm font-medium text-slate-500">Your profile</p>
-                        <h2 class="mt-2 truncate text-3xl font-semibold tracking-tight text-slate-950">
+                        <h2 class="mt-2 text-[2.1rem] font-semibold leading-[1.08] tracking-tight text-slate-950 sm:truncate sm:text-3xl">
                             {{ profileTitle }}
                         </h2>
-                        <p class="mt-2 text-sm leading-6 text-slate-600">
+                        <p class="mt-2 max-w-2xl text-[15px] leading-7 text-slate-600 sm:text-sm sm:leading-6">
                             {{ analysisNotice }}
                         </p>
                     </div>
 
-                    <div class="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-end">
+                    <div class="flex w-full max-w-xl flex-col gap-2.5 sm:gap-3 sm:flex-row sm:items-stretch sm:justify-end">
                         <a
                             :href="githubConnectUrl"
-                            class="inline-flex h-12 items-center justify-center rounded-xl border border-brand-200 bg-white px-5 text-sm font-semibold text-brand-700 shadow-sm transition hover:border-brand-300 hover:bg-brand-50 sm:flex-1"
+                            class="inline-flex h-11 items-center justify-center rounded-xl border border-brand-200 bg-white px-5 text-sm font-semibold text-brand-700 shadow-sm transition hover:border-brand-300 hover:bg-brand-50 sm:h-12 sm:flex-1"
                         >
                             {{ hasConnection ? 'Reconnect GitHub' : 'Connect GitHub' }}
                         </a>
                         <el-button
                             type="primary"
                             size="large"
-                            class="!h-12 sm:flex-1"
+                            class="!h-11 sm:!h-12 sm:flex-1"
                             :disabled="!canAnalyze"
                             :loading="publicLoading"
                             @click="runCurrentAnalysis"
@@ -384,11 +384,12 @@ onMounted(async () => {
 
             <section class="grid items-start gap-6 xl:grid-cols-[1.25fr_1fr]">
                 <SurfaceCard
-                    class="h-[680px]"
+                    class="max-h-[680px]"
+                    body-class="overflow-y-auto pb-3 pr-1 scrollbar-thin"
                     title="Repositories used for this report"
                     description="These are the repositories that contributed most to the current result."
                 >
-                    <div class="h-full space-y-3 overflow-y-auto pr-1">
+                    <div class="space-y-3">
                         <article
                             v-for="repo in analyzedRepositories"
                             :key="repo.fullName || repo.name"
@@ -426,11 +427,12 @@ onMounted(async () => {
                 </SurfaceCard>
 
                 <SurfaceCard
-                    class="h-[680px]"
+                    class="max-h-[680px]"
+                    body-class="overflow-y-auto pb-3 pr-1 scrollbar-thin"
                     title="What stands out in your GitHub profile"
                     description="A simple read on your style of work and the strongest visible skill signals."
                 >
-                    <div class="flex h-full flex-col gap-4">
+                    <div class="flex flex-col gap-4">
                         <div class="rounded-2xl border border-brand-100 bg-brand-50/70 p-4">
                             <div class="flex items-center justify-between gap-3">
                                 <h3 class="text-sm font-semibold text-slate-950">{{ contributionStyle.label || 'Visible work style' }}</h3>
@@ -442,7 +444,7 @@ onMounted(async () => {
                             </ul>
                         </div>
 
-                        <div class="flex-1 space-y-3 overflow-y-auto pr-1">
+                        <div class="flex-1 space-y-3">
                             <article
                                 v-for="signal in skillSignals"
                                 :key="signal.key"
@@ -514,7 +516,7 @@ onMounted(async () => {
                     title="Strengths"
                     description="These are the habits and signals already helping your profile."
                 >
-                    <div class="max-h-[440px] space-y-3 overflow-y-auto pr-1">
+                    <div class="max-h-[440px] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
                         <article
                             v-for="item in analysis.strengths"
                             :key="item.id"
@@ -537,7 +539,7 @@ onMounted(async () => {
                     title="Weaknesses"
                     description="These are the areas holding the profile back right now."
                 >
-                    <div class="max-h-[440px] space-y-3 overflow-y-auto pr-1">
+                    <div class="max-h-[440px] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
                         <article
                             v-for="item in analysis.weaknesses"
                             :key="item.id"
@@ -560,7 +562,7 @@ onMounted(async () => {
                     title="Recommended next steps"
                     description="Start here if you want the fastest improvement."
                 >
-                    <div class="max-h-[440px] space-y-3 overflow-y-auto pr-1">
+                    <div class="max-h-[440px] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
                         <article
                             v-for="item in analysis.recommendations"
                             :key="item.id"
@@ -602,7 +604,7 @@ onMounted(async () => {
                 >
                     <div class="flex h-full flex-col gap-4">
                         <p class="text-sm leading-6 text-slate-700">{{ visibilityAdvice.summary }}</p>
-                        <div class="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                        <div class="max-h-[420px] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
                             <article
                                 v-for="(item, index) in visibilityAdvice.actions"
                                 :key="`${item.action}-${index}`"
@@ -624,7 +626,7 @@ onMounted(async () => {
                     title="Best actions to take next"
                     description="A short list of moves that should improve the profile fastest."
                 >
-                    <div class="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                    <div class="max-h-[420px] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
                         <article
                             v-for="(item, index) in improvementActions"
                             :key="`${item.title}-${index}`"
@@ -650,7 +652,7 @@ onMounted(async () => {
                     title="Next 7-day plan"
                     description="A simple plan for the next 7 days."
                 >
-                    <div class="max-h-[520px] space-y-3 overflow-y-auto pr-1">
+                    <div class="max-h-[520px] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
                         <article
                             v-for="item in analysis.weeklyPlan"
                             :key="`${item.day}-${item.title}`"
@@ -679,7 +681,7 @@ onMounted(async () => {
                     title="Next 30-day plan"
                     description="A simple plan for the next 30 days."
                 >
-                    <div class="max-h-[520px] space-y-3 overflow-y-auto pr-1">
+                    <div class="max-h-[520px] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
                         <article
                             v-for="item in thirtyDayPlan"
                             :key="item.week"
@@ -746,7 +748,7 @@ onMounted(async () => {
                     title="Suggested repositories to contribute to"
                     description="Repositories that look like a good fit for your current skills and contribution style."
                 >
-                    <div class="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+                    <div class="max-h-[420px] space-y-3 overflow-y-auto pr-1 scrollbar-thin">
                         <article
                             v-for="item in suggestedRepositories"
                             :key="item.repo"

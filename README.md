@@ -8,6 +8,18 @@ It combines:
 - Gemini enhancement for concise coaching, cached by snapshot hash
 - a chart-heavy dashboard and workbench built with Vue 3, Element Plus, Tailwind, and ECharts
 
+## Screenshots
+
+Current live deployment snapshots:
+
+### Desktop
+
+![Growth Insights desktop landing](docs/screenshots/current-landing.png)
+
+### Mobile
+
+![Growth Insights mobile landing](docs/screenshots/current-mobile.png)
+
 ## What It Does
 
 - fetches GitHub profile, repositories, languages, commits, pull requests, and issues

@@ -8,6 +8,10 @@ defineProps({
         type: String,
         default: '',
     },
+    bodyClass: {
+        type: String,
+        default: '',
+    },
 });
 </script>
 
@@ -27,7 +31,7 @@ defineProps({
             </div>
         </div>
 
-        <div class="flex-1" :class="title || description || $slots.actions ? 'mt-4' : ''">
+        <div class="flex-1" :class="[title || description || $slots.actions ? 'mt-4' : '', bodyClass]">
             <slot />
         </div>
     </section>

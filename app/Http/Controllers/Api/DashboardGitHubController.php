@@ -31,7 +31,7 @@ class DashboardGitHubController extends ApiController
         DashboardPayloadBuilder $payloadBuilder,
     ): JsonResponse {
         if (function_exists('set_time_limit')) {
-            @set_time_limit(90);
+            @set_time_limit(180);
         }
 
         $connection = $analysisAccessService->currentConnection($request);

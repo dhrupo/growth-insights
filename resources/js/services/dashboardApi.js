@@ -1,12 +1,15 @@
 import axios from 'axios';
 
+const DEFAULT_TIMEOUT = 60000;
+const LONG_RUNNING_TIMEOUT = 180000;
+
 const api = axios.create({
     baseURL: import.meta.env.VITE_DASHBOARD_API_BASE_URL || '/api',
     headers: {
         Accept: 'application/json',
         'X-Requested-With': 'XMLHttpRequest',
     },
-    timeout: 60000,
+    timeout: DEFAULT_TIMEOUT,
 });
 
 const endpointMap = {
@@ -43,9 +46,9 @@ const requestSlice = async (slice, params) => {
     }
 };
 
-const postSlice = async (slice, data) => {
+const postSlice = async (slice, data, config = {}) => {
     try {
-        const response = await api.post(endpointMap[slice], data);
+        const response = await api.post(endpointMap[slice], data, config);
         return {
             data: unwrap(response),
             error: null,
@@ -75,7 +78,9 @@ export const dashboardApi = {
             return failure(error);
         }
     },
-    syncCurrentAnalysis: async () => postSlice('syncCurrentAnalysis'),
+    syncCurrentAnalysis: async () => postSlice('syncCurrentAnalysis', undefined, {
+        timeout: LONG_RUNNING_TIMEOUT,
+    }),
     fetchSummary: (params) => requestSlice('summary', params),
     fetchTimeline: (params) => requestSlice('timeline', params),
     fetchInsights: (params) => requestSlice('insights', params),
